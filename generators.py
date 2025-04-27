@@ -49,8 +49,8 @@ az group show --name $RG_NAME -o table
 """
 
 def generate_networking(vnet_name, vnet_address_prefix, subnet_name, 
-                      subnet_prefix, pip_name, agw_name, waf_name):
-    """Generate networking script section"""
+                      subnet_prefix, pip_name, agw_name, waf_name, apim_name):
+    """Generate networking script section with APIM backend configured"""
     return f"""
 # Create Virtual Network
 az network vnet create \\
@@ -78,7 +78,13 @@ az network public-ip create \\
   --dns-name anpi-$ENV \\
   --tags "$SHARED_TAG"
 
-# Cách 1: Create Application Gateway
+# Get APIM hostname for backend configuration
+APIM_HOST=$(az apim show --name {apim_name} --resource-group $RG_NAME --query hostname -o tsv)
+if [ -z "$APIM_HOST" ]; then
+  APIM_HOST="{apim_name}.azure-api.net"
+fi
+
+# Create Application Gateway with APIM Backend
 az network application-gateway create \\
   --name {agw_name} \\
   --resource-group $RG_NAME \\
@@ -87,23 +93,14 @@ az network application-gateway create \\
   --subnet {subnet_name} \\
   --public-ip-address {pip_name} \\
   --sku Standard_v2 \\
+  --capacity 2 \\
+  --frontend-port 80 \\
+  --http-settings-cookie-based-affinity Disabled \\
+  --http-settings-port 80 \\
+  --http-settings-protocol Http \\
+  --routing-rule-type Basic \\
+  --servers $APIM_HOST \\
   --tags "$SHARED_TAG"
-
-# Cách 2: Tạo thủ công qua Azure Portal và ghi chú hướng dẫn
-# 1. Đi tới Azure Portal: https://portal.azure.com
-# 2. Tìm "Application Gateway" và chọn "Create"
-# 3. Điền các thông tin:
-#    - Resource Group: {{rg_name}}
-#    - Name: {agw_name}
-#    - Region: {{location}}
-#    - Tier: Standard V2
-#    - Capacity: 2
-#    - Virtual Network: {vnet_name}
-#    - Subnet: {subnet_name}
-#    - Frontend IP: {pip_name}
-#    - Frontend Port: 80
-#    - Backend Pool: Tạm thời để trống hoặc thêm 10.0.0.1 (dummy IP)
-# 4. Đảm bảo thiết lập priority là 100 cho routing rule
 
 # Create WAF policy
 az network application-gateway waf-policy create \\
@@ -434,18 +431,66 @@ az search index show --name {search_index_name} --service-name {search_name} --r
 """
 
 def generate_api_management(apim_name, apim_sku, apim_publisher_email, 
-                          apim_publisher_name, api_id, api_path, api_display_name):
-    """Generate API management script section"""
+                          apim_publisher_name, api_id, api_path, api_display_name, location):
+    """Generate API management script section based on ARM template"""
     return f"""
 # Create API Management service
 az apim create \\
   --name {apim_name} \\
   --resource-group $RG_NAME \\
-  --location $LOCATION \\
+  --location {location} \\
   --publisher-email "{apim_publisher_email}" \\
   --publisher-name "{apim_publisher_name}" \\
   --sku-name {apim_sku} \\
-  --tags "$SHARED_TAG"
+  --tags "$SHARED_TAG" "Project=AnpiBot Environment=$ENVIRONMENT"
+
+# Set custom properties for APIM security protocol settings
+az apim update \\
+  --name {apim_name} \\
+  --resource-group $RG_NAME \\
+  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls10"="False" \\
+  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls11"="False" \\
+  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls10"="False" \\
+  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls11"="False" \\
+  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Ssl30"="False" \\
+  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Protocols.Server.Http2"="False"
+
+# Configure global APIM policies
+cat > /tmp/apim-global-policy.xml << EOF
+<!--
+    IMPORTANT:
+    - Policy elements can appear only within the <inbound>, <outbound>, <backend> section elements.
+    - Only the <forward-request> policy element can appear within the <backend> section element.
+    - To apply a policy to the incoming request (before it is forwarded to the backend service), place a corresponding policy element within the <inbound> section element.
+    - To apply a policy to the outgoing response (before it is sent back to the caller), place a corresponding policy element within the <outbound> section element.
+    - To add a policy position the cursor at the desired insertion point and click on the round button associated with the policy.
+    - To remove a policy, delete the corresponding policy statement from the policy document.
+    - Policies are applied in the order of their appearance, from the top down.
+-->
+<policies>
+  <inbound></inbound>
+  <backend>
+    <forward-request />
+  </backend>
+  <outbound></outbound>
+</policies>
+EOF
+
+az apim policy set \\
+  --resource-group $RG_NAME \\
+  --service-name "{apim_name}" \\
+  --policy-id policy \\
+  --value-file /tmp/apim-global-policy.xml \\
+  --format xml
+
+# Create built-in subscription
+az apim subscription create \\
+  --resource-group $RG_NAME \\
+  --service-name "{apim_name}" \\
+  --subscription-id master \\
+  --scope /apis \\
+  --display-name "Built-in all-access subscription" \\
+  --state active
 
 # Create API in APIM
 az apim api create \\
@@ -487,6 +532,8 @@ az apim api operation create \\
   --method POST \\
   --url-template "/api/broadcast/users" \\
   --description "Broadcast messages to users"
+
+rm /tmp/apim-global-policy.xml
 
 # Verification:
 # Azure Portal:
@@ -868,10 +915,10 @@ done
 echo "Network connectivity verification completed. Review any errors and warnings above."
 """
 
-def generate_complete_script(env, env_vars, resource_group, networking, app_service,
-                           data_ai_services, api_management, web_app, bot_service,
+def generate_complete_script(env, env_vars, resource_group, api_management, networking, app_service,
+                           data_ai_services, web_app, bot_service,
                            teams_integration, network_verification):
-    """Generate complete deployment script"""
+    """Generate complete deployment script with reordered sections"""
     return f"""#!/bin/bash
 # Azure ANPI Bot Deployment Script
 # Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -881,13 +928,15 @@ def generate_complete_script(env, env_vars, resource_group, networking, app_serv
 
 {resource_group}
 
+# First, create API Management
+{api_management}
+
+# Now create networking with Application Gateway pointing to APIM
 {networking}
 
 {app_service}
 
 {data_ai_services}
-
-{api_management}
 
 {web_app}
 
@@ -901,7 +950,7 @@ echo "Deployment completed successfully!"
 """
 
 def generate_all_scripts(params):
-    """Generate all script sections based on input parameters"""
+    """Generate all script sections based on input parameters with APIM first, then Application Gateway"""
     
     # Generate individual sections
     env_vars = generate_environment_vars(
@@ -922,6 +971,19 @@ def generate_all_scripts(params):
     
     resource_group = generate_resource_group()
     
+    # Create API Management first
+    api_mgmt = generate_api_management(
+        params['apim_name'],
+        params['apim_sku'],
+        params['apim_publisher_email'],
+        params['apim_publisher_name'],
+        params['api_id'],
+        params['api_path'],
+        params['api_display_name'],
+        params['location']
+    )
+    
+    # Then create networking with references to APIM
     networking = generate_networking(
         params['vnet_name'],
         params['vnet_address_prefix'],
@@ -929,9 +991,11 @@ def generate_all_scripts(params):
         params['subnet_prefix'],
         params['pip_name'],
         params['agw_name'],
-        params['waf_name']
+        params['waf_name'],
+        params['apim_name']
     )
     
+    # Continue with other resources
     app_service = generate_app_service(
         params['asp_name'],
         params['asp_sku'],
@@ -951,16 +1015,6 @@ def generate_all_scripts(params):
         params['search_sku'],
         params['search_index_name'],
         params['semantic_config_name']
-    )
-    
-    api_mgmt = generate_api_management(
-        params['apim_name'],
-        params['apim_sku'],
-        params['apim_publisher_email'],
-        params['apim_publisher_name'],
-        params['api_id'],
-        params['api_path'],
-        params['api_display_name']
     )
     
     web_app = generate_web_app(
@@ -1002,15 +1056,15 @@ def generate_all_scripts(params):
         params['search_name']
     )
     
-    # Generate complete script
+    # Generate complete script - reordering sections with API Management first
     complete_script = generate_complete_script(
         params['env'],
         env_vars,
         resource_group,
-        networking,
+        api_mgmt,      # APIM first
+        networking,    # Networking (Application Gateway) second 
         app_service,
         data_ai,
-        api_mgmt,
         web_app,
         bot_service,
         teams_integration,

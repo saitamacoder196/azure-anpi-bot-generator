@@ -175,12 +175,17 @@ def create_data_ai_tab():
     }
 
 def create_api_management_tab():
-    """Create the API Management tab"""
+    """Create the API Management tab with fields from ARM template"""
     st.header("API Management")
+    
     apim_name = st.text_input("API Management Name", value="apim-itz")
-    apim_sku = st.selectbox("API Management SKU", ["Developer", "Basic", "Standard", "Premium"])
-    apim_publisher_email = st.text_input("Publisher Email", value="hienvt9@fpt.com")
-    apim_publisher_name = st.text_input("Publisher Name", value="ANPI Bot Team")
+    
+    # Updated SKU options to include Consumption per ARM template
+    apim_sku = st.selectbox("API Management SKU", ["Consumption", "Developer", "Basic", "Standard", "Premium"])
+    
+    # Updated with publisher details from the ARM template
+    apim_publisher_email = st.text_input("Publisher Email", value="tuyendhq@fpt.com")
+    apim_publisher_name = st.text_input("Publisher Name", value="FJP Japan Holding")
     
     api_id = st.text_input("API ID", value="anpi-bot-api")
     api_path = st.text_input("API Path", value="anpi")
@@ -198,7 +203,7 @@ def create_api_management_tab():
         'api_display_name': api_display_name,
         'allowed_origins': allowed_origins
     }
-
+    
 def create_teams_integration_tab():
     """Create the Teams Integration tab"""
     env = st.session_state.sidebar_values['env']
@@ -213,7 +218,7 @@ def create_teams_integration_tab():
     }
 
 def create_deployment_checklist_tab():
-    """Create the Deployment Checklist tab"""
+    """Create the Deployment Checklist tab with updated order"""
     st.header("Deployment Checklist")
     
     st.subheader("1. Initial Setup")
@@ -232,14 +237,22 @@ def create_deployment_checklist_tab():
     rg_checks = st.session_state.checklist_state["rg_checks"]
     rg_checks[0] = st.checkbox("☐ Create Resource Group", value=rg_checks[0])
     
-    st.subheader("3. Networking Deployment")
+    st.subheader("3. API Management Deployment")
+    if "api_checks" not in st.session_state.checklist_state:
+        st.session_state.checklist_state["api_checks"] = [False, False]
+    
+    api_checks = st.session_state.checklist_state["api_checks"]
+    api_checks[0] = st.checkbox("☐ Create API Management Service", value=api_checks[0])
+    api_checks[1] = st.checkbox("☐ Configure API in APIM", value=api_checks[1])
+    
+    st.subheader("4. Networking Deployment")
     if "net_checks" not in st.session_state.checklist_state:
         st.session_state.checklist_state["net_checks"] = [False, False, False]
     
     net_checks = st.session_state.checklist_state["net_checks"]
     net_checks[0] = st.checkbox("☐ Create Virtual Network and Subnet", value=net_checks[0])
     net_checks[1] = st.checkbox("☐ Create Public IP Address", value=net_checks[1])
-    net_checks[2] = st.checkbox("☐ Create Application Gateway with WAF", value=net_checks[2])
+    net_checks[2] = st.checkbox("☐ Create Application Gateway with WAF (pointing to APIM backend)", value=net_checks[2])
     
     st.subheader("4. App Service Deployment")
     if "app_checks" not in st.session_state.checklist_state:
@@ -317,11 +330,11 @@ def display_output_section(env):
     col1, col2 = st.columns([1, 3])
     
     with col1:
-        # Radio buttons for selecting script section
+        # Updated order of script sections
         selected_section = st.radio(
             "Script Sections", 
-            ["Complete Script", "Environment Variables", "Resource Group", "Networking", "App Service", 
-             "Data & AI", "API Management", "Web App", "Bot Service", "Teams Integration", "Network Verification"],
+            ["Complete Script", "Environment Variables", "Resource Group", "API Management", "Networking", "App Service", 
+             "Data & AI", "Web App", "Bot Service", "Teams Integration", "Network Verification"],
             key="section_selector"
         )
         st.session_state.selected_section = selected_section

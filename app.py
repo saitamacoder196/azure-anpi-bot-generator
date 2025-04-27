@@ -9,7 +9,7 @@ from generators import generate_all_scripts
 import ui
 
 def main():
-    """Main application entry point"""
+    """Main application entry point with updated tab order"""
     # Initialize session state variables
     initialize_session_state()
     
@@ -20,13 +20,13 @@ def main():
     sidebar_values = ui.create_sidebar()
     st.session_state.sidebar_values = sidebar_values
     
-    # Create main tabs
+    # Create main tabs - reordered to emphasize APIM first
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "Basic Resources", 
+        "API Management",  # Moved up in the order
         "Networking", 
         "App Service", 
         "Data & AI", 
-        "API Management", 
         "Teams Integration",
         "Deployment Checklist"
     ])
@@ -36,16 +36,16 @@ def main():
         basic_resources = ui.create_basic_resources_tab()
     
     with tab2:
-        networking = ui.create_networking_tab()
+        api_management = ui.create_api_management_tab()
     
     with tab3:
-        app_service = ui.create_app_service_tab()
+        networking = ui.create_networking_tab()
     
     with tab4:
-        data_ai = ui.create_data_ai_tab()
+        app_service = ui.create_app_service_tab()
     
     with tab5:
-        api_management = ui.create_api_management_tab()
+        data_ai = ui.create_data_ai_tab()
     
     with tab6:
         teams_integration = ui.create_teams_integration_tab()
