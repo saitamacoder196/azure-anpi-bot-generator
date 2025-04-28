@@ -36,6 +36,17 @@ def initialize_session_state():
     # JWT key state
     if 'jwt_secret_key' not in st.session_state:
         st.session_state['jwt_secret_key'] = "Ch-GrTBdux']sl|Jspf]C8;#Hn\\o~3[~gyMQ[t!R"
+    
+    # Make sure sidebar_values is initialized
+    if 'sidebar_values' not in st.session_state:
+        st.session_state['sidebar_values'] = {
+            'env': 'dev',
+            'subscription_id': 'your-subscription-id',
+            'location': 'japaneast',
+            'ms_app_id': 'your-bot-app-id',
+            'ms_app_password': 'your-bot-app-password',
+            'ms_app_tenant_id': 'your-tenant-id'
+        }
 
 def update_generated_scripts(scripts_dict):
     """Update the generated scripts in session state"""
@@ -45,3 +56,7 @@ def update_generated_scripts(scripts_dict):
 def update_jwt_secret(new_secret):
     """Update the JWT secret key in session state"""
     st.session_state['jwt_secret_key'] = new_secret
+
+def update_sidebar_values(values_dict):
+    """Update the sidebar values in session state"""
+    st.session_state['sidebar_values'] = values_dict

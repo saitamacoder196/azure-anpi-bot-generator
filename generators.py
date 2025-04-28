@@ -431,7 +431,7 @@ az search index show --name {search_index_name} --service-name {search_name} --r
 """
 
 def generate_api_management(apim_name, apim_sku, apim_publisher_email, 
-                          apim_publisher_name, api_id, api_path, api_display_name, location):
+                          apim_publisher_name, api_id, api_path, api_display_name, location, app_name):
     """Generate API management script section based on ARM template"""
     return f"""
 # Create API Management service
@@ -444,101 +444,27 @@ az apim create \\
   --sku-name {apim_sku} \\
   --tags "$SHARED_TAG" "Project=AnpiBot Environment=$ENVIRONMENT"
 
-# Set custom properties for APIM security protocol settings
-az apim update \\
-  --name {apim_name} \\
-  --resource-group $RG_NAME \\
-  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls10"="False" \\
-  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls11"="False" \\
-  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls10"="False" \\
-  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls11"="False" \\
-  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Ssl30"="False" \\
-  --set properties.customProperties."Microsoft.WindowsAzure.ApiManagement.Gateway.Protocols.Server.Http2"="False"
-
-# Configure global APIM policies
-cat > /tmp/apim-global-policy.xml << EOF
-<!--
-    IMPORTANT:
-    - Policy elements can appear only within the <inbound>, <outbound>, <backend> section elements.
-    - Only the <forward-request> policy element can appear within the <backend> section element.
-    - To apply a policy to the incoming request (before it is forwarded to the backend service), place a corresponding policy element within the <inbound> section element.
-    - To apply a policy to the outgoing response (before it is sent back to the caller), place a corresponding policy element within the <outbound> section element.
-    - To add a policy position the cursor at the desired insertion point and click on the round button associated with the policy.
-    - To remove a policy, delete the corresponding policy statement from the policy document.
-    - Policies are applied in the order of their appearance, from the top down.
--->
-<policies>
-  <inbound></inbound>
-  <backend>
-    <forward-request />
-  </backend>
-  <outbound></outbound>
-</policies>
-EOF
-
-az apim policy set \\
-  --resource-group $RG_NAME \\
-  --service-name "{apim_name}" \\
-  --policy-id policy \\
-  --value-file /tmp/apim-global-policy.xml \\
-  --format xml
-
-# Create built-in subscription
-az apim subscription create \\
-  --resource-group $RG_NAME \\
-  --service-name "{apim_name}" \\
-  --subscription-id master \\
-  --scope /apis \\
-  --display-name "Built-in all-access subscription" \\
-  --state active
-
-# Create API in APIM
-az apim api create \\
-  --resource-group $RG_NAME \\
-  --service-name "{apim_name}" \\
-  --api-id "{api_id}" \\
-  --path "{api_path}" \\
-  --display-name "{api_display_name}" \\
-  --protocols http https \\
-  --subscription-required false
-
-# Add Operations to APIM API
-az apim api operation create \\
-  --resource-group $RG_NAME \\
-  --service-name "{apim_name}" \\
-  --api-id "{api_id}" \\
-  --operation-id "messages" \\
-  --display-name "Bot Messages" \\
-  --method POST \\
-  --url-template "/api/messages" \\
-  --description "Bot Framework messages endpoint"
-
-az apim api operation create \\
-  --resource-group $RG_NAME \\
-  --service-name "{apim_name}" \\
-  --api-id "{api_id}" \\
-  --operation-id "alive" \\
-  --display-name "Health Check" \\
-  --method GET \\
-  --url-template "/api/alive" \\
-  --description "Health check endpoint"
-
-az apim api operation create \\
-  --resource-group $RG_NAME \\
-  --service-name "{apim_name}" \\
-  --api-id "{api_id}" \\
-  --operation-id "broadcast" \\
-  --display-name "Broadcast Messages" \\
-  --method POST \\
-  --url-template "/api/broadcast/users" \\
-  --description "Broadcast messages to users"
-
-rm /tmp/apim-global-policy.xml
-
-# Verification:
-# Azure Portal:
-# - Go to API Management services and check {apim_name}
-# - Navigate to APIs, check {api_id} and its operations
+# Lưu ý: API và Operations
+# Thay vì sử dụng CLI, bạn nên tải lên tệp YAML để cấu hình API và Operations
+# thông qua Azure Portal
+# Các bước thực hiện:
+# 1. Truy cập Azure Portal
+# 2. Vào API Management service đã tạo
+# 3. Trong phần API Management, chọn APIs
+# 4. Chọn "Import" và tải lên tệp YAML đã chuẩn bị
+#
+# Bạn có thể tải xuống tệp YAML mẫu từ nút bên dưới và chỉnh sửa nó.
+# Tệp YAML chứa các đường dẫn API sau:
+# - API Authentication: /api/auth/token, /api/auth/refresh-token, /api/auth/validate
+# - API Broadcast: /api/broadcast/anpi-confirms, /api/broadcast/leaderships-earthquakealert,
+#                  /api/broadcast/leaderships-statusreport, /api/broadcast/notify
+# - API Health: /api/alive, /api/alive/version, /api/alive/status
+# - API Bot: /api/messages
+#
+# Lưu ý rằng bạn cần thay đổi các biến sau trong file YAML:
+# - servers.url: Đã được cấu hình với 2 URL:
+#   1. URL của APIM: https://{apim_name}.azure-api.net/{api_path}
+#   2. URL của App Service: https://{app_name}.azurewebsites.net
 
 # CLI Verification:
 az apim show --name {apim_name} --resource-group $RG_NAME -o table
@@ -980,9 +906,10 @@ def generate_all_scripts(params):
         params['api_id'],
         params['api_path'],
         params['api_display_name'],
-        params['location']
+        params['location'],
+        params['app_name']
     )
-    
+
     # Then create networking with references to APIM
     networking = generate_networking(
         params['vnet_name'],

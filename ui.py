@@ -1,8 +1,9 @@
 """
 UI components for the Streamlit application.
 """
+from datetime import datetime
 import streamlit as st
-from utils import get_markdown_download_link, generate_jwt_secret, create_markdown_content
+from utils import get_markdown_download_link, generate_jwt_secret, create_markdown_content, get_settings_download_link, get_yaml_download_link, parse_uploaded_settings
 from state import update_jwt_secret
 
 def configure_page():
@@ -12,19 +13,98 @@ def configure_page():
     st.markdown("This tool helps you generate Azure CLI commands for deploying the ANPI Bot infrastructure. Fill in the parameters below and copy the generated commands.")
 
 def create_sidebar():
-    """Create and configure the sidebar with environment settings"""
+    """Create and configure the sidebar with environment settings and export/import functionality"""
     with st.sidebar:
         st.header("Environment Settings")
-        env = st.selectbox("Environment", ["dev", "test", "preprd", "prod"])
-        subscription_id = st.text_input("Azure Subscription ID", value="your-subscription-id")
-        location = st.selectbox("Azure Region", ["japaneast", "eastus", "westus", "northeurope", "southeastasia"])
+        
+        # Add export/import section at the top
+        with st.expander("Export/Import Settings", expanded=False):
+            # Export settings
+            if st.button("Export Settings"):
+                if 'sidebar_values' in st.session_state:
+                    # Combine environment and bot settings
+                    export_settings = {
+                        'environment': {
+                            'env': st.session_state.sidebar_values.get('env', 'dev'),
+                            'subscription_id': st.session_state.sidebar_values.get('subscription_id', ''),
+                            'location': st.session_state.sidebar_values.get('location', 'japaneast')
+                        },
+                        'bot': {
+                            'ms_app_id': st.session_state.sidebar_values.get('ms_app_id', ''),
+                            'ms_app_password': st.session_state.sidebar_values.get('ms_app_password', ''),
+                            'ms_app_tenant_id': st.session_state.sidebar_values.get('ms_app_tenant_id', '')
+                        }
+                    }
+                    
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    download_link = get_settings_download_link(
+                        export_settings, 
+                        f"anpi_settings_{timestamp}.json"
+                    )
+                    st.markdown(download_link, unsafe_allow_html=True)
+                else:
+                    st.warning("No settings available to export")
+            
+            # Import settings
+            uploaded_file = st.file_uploader("Import Settings", type=["json"])
+            if uploaded_file is not None:
+                settings = parse_uploaded_settings(uploaded_file)
+                if settings:
+                    if st.button("Apply Imported Settings"):
+                        # Create sidebar_values if it doesn't exist
+                        if 'sidebar_values' not in st.session_state:
+                            st.session_state.sidebar_values = {}
+                        
+                        # Update environment settings
+                        if 'environment' in settings:
+                            env_settings = settings['environment']
+                            st.session_state.sidebar_values['env'] = env_settings.get('env', 'dev')
+                            st.session_state.sidebar_values['subscription_id'] = env_settings.get('subscription_id', '')
+                            st.session_state.sidebar_values['location'] = env_settings.get('location', 'japaneast')
+                        
+                        # Update bot settings
+                        if 'bot' in settings:
+                            bot_settings = settings['bot']
+                            st.session_state.sidebar_values['ms_app_id'] = bot_settings.get('ms_app_id', '')
+                            st.session_state.sidebar_values['ms_app_password'] = bot_settings.get('ms_app_password', '')
+                            st.session_state.sidebar_values['ms_app_tenant_id'] = bot_settings.get('ms_app_tenant_id', '')
+                        
+                        st.success("Settings imported successfully!")
+                        st.rerun()
+                else:
+                    st.error("Failed to parse the uploaded file. Please ensure it's a valid JSON file.")
+        
+        # Regular sidebar inputs
+        env = st.selectbox("Environment", ["dev", "test", "preprd", "prod"], 
+                          index=["dev", "test", "preprd", "prod"].index(
+                              st.session_state.sidebar_values.get('env', 'dev')) if 'sidebar_values' in st.session_state else 0)
+        
+        subscription_id = st.text_input(
+            "Azure Subscription ID", 
+            value=st.session_state.sidebar_values.get('subscription_id', 'your-subscription-id') if 'sidebar_values' in st.session_state else 'your-subscription-id')
+        
+        location = st.selectbox(
+            "Azure Region", 
+            ["japaneast", "eastus", "westus", "northeurope", "southeastasia"],
+            index=["japaneast", "eastus", "westus", "northeurope", "southeastasia"].index(
+                st.session_state.sidebar_values.get('location', 'japaneast')) if 'sidebar_values' in st.session_state else 0)
         
         st.header("Bot Settings")
-        ms_app_id = st.text_input("Bot App ID", value="your-bot-app-id")
-        ms_app_password = st.text_input("Bot App Password", value="your-bot-app-password", type="password")
-        ms_app_tenant_id = st.text_input("Tenant ID", value="your-tenant-id")
+        ms_app_id = st.text_input(
+            "Bot App ID", 
+            value=st.session_state.sidebar_values.get('ms_app_id', 'your-bot-app-id') if 'sidebar_values' in st.session_state else 'your-bot-app-id')
         
-        return {
+        ms_app_password = st.text_input(
+            "Bot App Password", 
+            value=st.session_state.sidebar_values.get('ms_app_password', 'your-bot-app-password') if 'sidebar_values' in st.session_state else 'your-bot-app-password', 
+            type="password")
+        
+        ms_app_tenant_id = st.text_input(
+            "Tenant ID", 
+            value=st.session_state.sidebar_values.get('ms_app_tenant_id', 'your-tenant-id') if 'sidebar_values' in st.session_state else 'your-tenant-id')
+        
+        # Save values to sidebar_values dictionary
+        sidebar_values = {
             'env': env,
             'subscription_id': subscription_id, 
             'location': location,
@@ -32,7 +112,9 @@ def create_sidebar():
             'ms_app_password': ms_app_password,
             'ms_app_tenant_id': ms_app_tenant_id
         }
-
+        
+        return sidebar_values
+    
 def create_basic_resources_tab():
     """Create the Basic Resources tab"""
     st.header("Resource Group and Basic Settings")
@@ -193,6 +275,12 @@ def create_api_management_tab():
     
     allowed_origins = st.text_area("Allowed Origins (JSON array)", value='["https://*.fjpservice.net","https://localhost:4200"]')
     
+    # Save to session state for yaml generation
+    st.session_state['apim_name'] = apim_name
+    st.session_state['api_path'] = api_path
+    st.session_state['api_id'] = api_id
+    st.session_state['api_display_name'] = api_display_name
+    
     return {
         'apim_name': apim_name,
         'apim_sku': apim_sku,
@@ -226,98 +314,92 @@ def create_deployment_checklist_tab():
         st.session_state.checklist_state["setup_checks"] = [False, False, False]
     
     setup_checks = st.session_state.checklist_state["setup_checks"]
-    setup_checks[0] = st.checkbox("☐ Install Azure CLI", value=setup_checks[0])
-    setup_checks[1] = st.checkbox("☐ Login to Azure CLI (`az login`)", value=setup_checks[1])
-    setup_checks[2] = st.checkbox("☐ Set correct subscription (`az account set --subscription \"$SUBSCRIPTION_ID\"`)", value=setup_checks[2])
+    setup_checks[0] = st.checkbox("☐ Install Azure CLI", value=setup_checks[0], key="check_install_cli")
+    setup_checks[1] = st.checkbox("☐ Login to Azure CLI (`az login`)", value=setup_checks[1], key="check_login_cli")
+    setup_checks[2] = st.checkbox("☐ Set correct subscription (`az account set --subscription \"$SUBSCRIPTION_ID\"`)", value=setup_checks[2], key="check_set_sub")
     
     st.subheader("2. Resource Group Deployment")
     if "rg_checks" not in st.session_state.checklist_state:
         st.session_state.checklist_state["rg_checks"] = [False]
     
     rg_checks = st.session_state.checklist_state["rg_checks"]
-    rg_checks[0] = st.checkbox("☐ Create Resource Group", value=rg_checks[0])
+    rg_checks[0] = st.checkbox("☐ Create Resource Group", value=rg_checks[0], key="check_create_rg")
     
     st.subheader("3. API Management Deployment")
     if "api_checks" not in st.session_state.checklist_state:
         st.session_state.checklist_state["api_checks"] = [False, False]
     
     api_checks = st.session_state.checklist_state["api_checks"]
-    api_checks[0] = st.checkbox("☐ Create API Management Service", value=api_checks[0])
-    api_checks[1] = st.checkbox("☐ Configure API in APIM", value=api_checks[1])
+    api_checks[0] = st.checkbox("☐ Create API Management Service", value=api_checks[0], key="check_create_apim")
+    api_checks[1] = st.checkbox("☐ Configure API in APIM", value=api_checks[1], key="check_config_apim")
     
     st.subheader("4. Networking Deployment")
     if "net_checks" not in st.session_state.checklist_state:
         st.session_state.checklist_state["net_checks"] = [False, False, False]
     
     net_checks = st.session_state.checklist_state["net_checks"]
-    net_checks[0] = st.checkbox("☐ Create Virtual Network and Subnet", value=net_checks[0])
-    net_checks[1] = st.checkbox("☐ Create Public IP Address", value=net_checks[1])
-    net_checks[2] = st.checkbox("☐ Create Application Gateway with WAF (pointing to APIM backend)", value=net_checks[2])
+    net_checks[0] = st.checkbox("☐ Create Virtual Network and Subnet", value=net_checks[0], key="check_create_vnet")
+    net_checks[1] = st.checkbox("☐ Create Public IP Address", value=net_checks[1], key="check_create_pip")
+    net_checks[2] = st.checkbox("☐ Create Application Gateway with WAF (pointing to APIM backend)", value=net_checks[2], key="check_create_agw")
     
-    st.subheader("4. App Service Deployment")
+    st.subheader("5. App Service Deployment")
     if "app_checks" not in st.session_state.checklist_state:
         st.session_state.checklist_state["app_checks"] = [False, False]
     
     app_checks = st.session_state.checklist_state["app_checks"]
-    app_checks[0] = st.checkbox("☐ Create App Service Plan", value=app_checks[0])
-    app_checks[1] = st.checkbox("☐ Create Application Insights", value=app_checks[1])
+    app_checks[0] = st.checkbox("☐ Create App Service Plan", value=app_checks[0], key="check_create_asp")
+    app_checks[1] = st.checkbox("☐ Create Application Insights", value=app_checks[1], key="check_create_appins")
     
-    st.subheader("5. Data & AI Services Deployment")
+    st.subheader("6. Data & AI Services Deployment")
     if "data_checks" not in st.session_state.checklist_state:
         st.session_state.checklist_state["data_checks"] = [False, False, False, False, False]
     
     data_checks = st.session_state.checklist_state["data_checks"]
-    data_checks[0] = st.checkbox("☐ Create Key Vault", value=data_checks[0])
-    data_checks[1] = st.checkbox("☐ Create Cosmos DB and Containers", value=data_checks[1])
-    data_checks[2] = st.checkbox("☐ Create Azure OpenAI Service", value=data_checks[2])
-    data_checks[3] = st.checkbox("☐ Deploy OpenAI Models", value=data_checks[3])
-    data_checks[4] = st.checkbox("☐ Create Azure Search Service and Index", value=data_checks[4])
+    data_checks[0] = st.checkbox("☐ Create Key Vault", value=data_checks[0], key="check_create_kv")
+    data_checks[1] = st.checkbox("☐ Create Cosmos DB and Containers", value=data_checks[1], key="check_create_cosmos")
+    data_checks[2] = st.checkbox("☐ Create Azure OpenAI Service", value=data_checks[2], key="check_create_openai")
+    data_checks[3] = st.checkbox("☐ Deploy OpenAI Models", value=data_checks[3], key="check_deploy_models")
+    data_checks[4] = st.checkbox("☐ Create Azure Search Service and Index", value=data_checks[4], key="check_create_search")
     
-    st.subheader("6. API Management Deployment")
-    if "api_checks" not in st.session_state.checklist_state:
-        st.session_state.checklist_state["api_checks"] = [False, False]
-    
-    api_checks = st.session_state.checklist_state["api_checks"]
-    api_checks[0] = st.checkbox("☐ Create API Management Service", value=api_checks[0])
-    api_checks[1] = st.checkbox("☐ Configure API in APIM", value=api_checks[1])
+    # Remove the duplicate API Management section (it was already at position 3)
     
     st.subheader("7. Web App and Bot Service Deployment")
     if "web_checks" not in st.session_state.checklist_state:
         st.session_state.checklist_state["web_checks"] = [False, False, False, False]
     
     web_checks = st.session_state.checklist_state["web_checks"]
-    web_checks[0] = st.checkbox("☐ Create Web App", value=web_checks[0])
-    web_checks[1] = st.checkbox("☐ Store Secrets in Key Vault", value=web_checks[1])
-    web_checks[2] = st.checkbox("☐ Configure Web App Settings", value=web_checks[2])
-    web_checks[3] = st.checkbox("☐ Create Bot Service", value=web_checks[3])
+    web_checks[0] = st.checkbox("☐ Create Web App", value=web_checks[0], key="check_create_webapp")
+    web_checks[1] = st.checkbox("☐ Store Secrets in Key Vault", value=web_checks[1], key="check_store_secrets")
+    web_checks[2] = st.checkbox("☐ Configure Web App Settings", value=web_checks[2], key="check_config_webapp")
+    web_checks[3] = st.checkbox("☐ Create Bot Service", value=web_checks[3], key="check_create_bot")
     
     st.subheader("8. Teams Integration")
     if "teams_checks" not in st.session_state.checklist_state:
         st.session_state.checklist_state["teams_checks"] = [False, False]
     
     teams_checks = st.session_state.checklist_state["teams_checks"]
-    teams_checks[0] = st.checkbox("☐ Register Teams App", value=teams_checks[0])
-    teams_checks[1] = st.checkbox("☐ Store Teams App Credentials", value=teams_checks[1])
+    teams_checks[0] = st.checkbox("☐ Register Teams App", value=teams_checks[0], key="check_register_teams")
+    teams_checks[1] = st.checkbox("☐ Store Teams App Credentials", value=teams_checks[1], key="check_teams_creds")
     
     st.subheader("9. Final Verification")
     if "final_checks" not in st.session_state.checklist_state:
         st.session_state.checklist_state["final_checks"] = [False, False, False]
     
     final_checks = st.session_state.checklist_state["final_checks"]
-    final_checks[0] = st.checkbox("☐ Verify Bot Service Endpoint", value=final_checks[0])
-    final_checks[1] = st.checkbox("☐ Test API Through APIM", value=final_checks[1])
-    final_checks[2] = st.checkbox("☐ Verify Teams Integration", value=final_checks[2])
+    final_checks[0] = st.checkbox("☐ Verify Bot Service Endpoint", value=final_checks[0], key="check_verify_bot")
+    final_checks[1] = st.checkbox("☐ Test API Through APIM", value=final_checks[1], key="check_test_api")
+    final_checks[2] = st.checkbox("☐ Verify Teams Integration", value=final_checks[2], key="check_verify_teams")
     
     st.subheader("10. Network and Connectivity Verification")
     if "connect_checks" not in st.session_state.checklist_state:
         st.session_state.checklist_state["connect_checks"] = [False, False, False, False, False]
     
     connect_checks = st.session_state.checklist_state["connect_checks"]
-    connect_checks[0] = st.checkbox("☐ Verify App Service can access Key Vault", value=connect_checks[0])
-    connect_checks[1] = st.checkbox("☐ Verify App Service can access Cosmos DB", value=connect_checks[1])
-    connect_checks[2] = st.checkbox("☐ Verify App Service can access OpenAI Service", value=connect_checks[2])
-    connect_checks[3] = st.checkbox("☐ Verify API Management can reach App Service", value=connect_checks[3])
-    connect_checks[4] = st.checkbox("☐ Verify Application Gateway can route traffic to API Management", value=connect_checks[4])
+    connect_checks[0] = st.checkbox("☐ Verify App Service can access Key Vault", value=connect_checks[0], key="check_verify_kv")
+    connect_checks[1] = st.checkbox("☐ Verify App Service can access Cosmos DB", value=connect_checks[1], key="check_verify_cosmos")
+    connect_checks[2] = st.checkbox("☐ Verify App Service can access OpenAI Service", value=connect_checks[2], key="check_verify_openai")
+    connect_checks[3] = st.checkbox("☐ Verify API Management can reach App Service", value=connect_checks[3], key="check_verify_apim")
+    connect_checks[4] = st.checkbox("☐ Verify Application Gateway can route traffic to API Management", value=connect_checks[4], key="check_verify_agw")
 
 def display_output_section(env):
     """Display the output section with the selected script"""
@@ -338,6 +420,26 @@ def display_output_section(env):
             key="section_selector"
         )
         st.session_state.selected_section = selected_section
+        
+        # Add option to download everything as JSON
+        if st.button("Export All Settings"):
+            # Collect all settings from session state
+            all_settings = {
+                "environment": st.session_state.sidebar_values,
+                "basic_resources": {k: v for k, v in st.session_state.items() if k.startswith("basic_")},
+                "networking": {k: v for k, v in st.session_state.items() if k.startswith("net_")},
+                "app_service": {k: v for k, v in st.session_state.items() if k.startswith("app_")},
+                "data_ai": {k: v for k, v in st.session_state.items() if k.startswith("data_") or k.startswith("ai_")},
+                "api_management": {k: v for k, v in st.session_state.items() if k.startswith("api_")},
+                "teams_integration": {k: v for k, v in st.session_state.items() if k.startswith("teams_")}
+            }
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            download_link = get_settings_download_link(
+                all_settings, 
+                f"anpi_full_settings_{timestamp}.json"
+            )
+            st.markdown(download_link, unsafe_allow_html=True)
     
     with col2:
         show_selected_section(env)
@@ -383,6 +485,22 @@ def show_selected_section(env):
         st.code(scripts["data_ai_services"], language="bash")
     elif selected_section == "API Management":
         st.code(scripts["api_management"], language="bash")
+        
+        # Add YAML download button for API Management
+        st.markdown("### API Configuration YAML")
+        st.markdown("Tải xuống tệp YAML mẫu cho việc cấu hình API. Bạn có thể chỉnh sửa tệp này và nhập vào Azure Portal.")
+        
+        # Get APIM details from session state
+        apim_name = st.session_state.sidebar_values.get('apim_name', 'apim-itz')
+        api_path = st.session_state.sidebar_values.get('api_path', 'anpi')
+        api_id = st.session_state.sidebar_values.get('api_id', 'anpi-bot-api')
+        api_display_name = st.session_state.sidebar_values.get('api_display_name', 'ANPI Bot API')
+        app_name = st.session_state.sidebar_values.get('app_name', f'app-itz-anpi-{env}-001')
+        
+        # Create download link
+        yaml_download_link = get_yaml_download_link(api_display_name, env, app_name)
+        st.markdown(yaml_download_link, unsafe_allow_html=True)
+    
     elif selected_section == "Web App":
         st.code(scripts["web_app"], language="bash")
     elif selected_section == "Bot Service":
