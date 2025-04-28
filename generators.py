@@ -49,8 +49,8 @@ az group show --name $RG_NAME -o table
 """
 
 def generate_networking(vnet_name, vnet_address_prefix, subnet_name, 
-                      subnet_prefix, pip_name, agw_name, waf_name, apim_name):
-    """Generate networking script section with APIM backend configured"""
+                      subnet_prefix, pip_name, agw_name, waf_name, apim_name, app_name):
+    """Generate networking script section with App Service backend configured"""
     return f"""
 # Create Virtual Network
 az network vnet create \\
@@ -78,13 +78,17 @@ az network public-ip create \\
   --dns-name anpi-$ENV \\
   --tags "$SHARED_TAG"
 
-# Get APIM hostname for backend configuration
-APIM_HOST=$(az apim show --name {apim_name} --resource-group $RG_NAME --query hostname -o tsv)
+# Lấy FQDN của APIM và App Service để cấu hình backend pool
+APIM_HOST=$(az apim show --name {apim_name} --resource-group $RG_NAME --query hostnameConfigurations[0].hostName -o tsv)
 if [ -z "$APIM_HOST" ]; then
   APIM_HOST="{apim_name}.azure-api.net"
 fi
 
-# Create Application Gateway with APIM Backend
+APP_SERVICE_HOST="{app_name}.azurewebsites.net"
+
+# Tạo Application Gateway với các thành phần cần thiết
+
+# Tạo Application Gateway
 az network application-gateway create \\
   --name {agw_name} \\
   --resource-group $RG_NAME \\
@@ -94,13 +98,84 @@ az network application-gateway create \\
   --public-ip-address {pip_name} \\
   --sku Standard_v2 \\
   --capacity 2 \\
-  --frontend-port 80 \\
-  --http-settings-cookie-based-affinity Disabled \\
-  --http-settings-port 80 \\
-  --http-settings-protocol Http \\
-  --routing-rule-type Basic \\
-  --servers $APIM_HOST \\
   --tags "$SHARED_TAG"
+
+# Tạo các thành phần cần thiết cho routing rule
+
+# 1. Tạo frontend port cho HTTP (port 80)
+az network application-gateway frontend-port create \\
+  --name frontend-port-80 \\
+  --port 80 \\
+  --gateway-name {agw_name} \\
+  --resource-group $RG_NAME
+
+# 2. Tạo listener HTTP (lắng nghe trên frontend port)
+az network application-gateway http-listener create \\
+  --name http-listener \\
+  --frontend-port frontend-port-80 \\
+  --frontend-ip appGatewayFrontendIP \\
+  --gateway-name {agw_name} \\
+  --resource-group $RG_NAME \\
+  --protocol Http
+
+# 3. Tạo backend pool cho APIM
+az network application-gateway address-pool create \\
+  --name anpi-apim-backend \\
+  --gateway-name {agw_name} \\
+  --resource-group $RG_NAME \\
+  --servers "{apim_name}.azure-api.net"
+
+# 4. Tạo backend HTTP settings
+az network application-gateway http-settings create \\
+  --name backend-http-settings \\
+  --port 80 \\
+  --protocol Http \\
+  --cookie-based-affinity Disabled \\
+  --timeout 30 \\
+  --gateway-name {agw_name} \\
+  --resource-group $RG_NAME
+
+# 5. Tạo routing rule - kết nối listener với backend pool
+az network application-gateway rule create \\
+  --name apim-routing-rule \\
+  --gateway-name {agw_name} \\
+  --resource-group $RG_NAME \\
+  --http-listener http-listener \\
+  --rule-type Basic \\
+  --address-pool anpi-apim-backend \\
+  --http-settings backend-http-settings \\
+  --priority 100
+
+# 6. Tạo routing rule
+az network application-gateway url-path-map create \\
+  --name url-path-map \\
+  --paths "/api/*" \\
+  --gateway-name {agw_name} \\
+  --resource-group $RG_NAME \\
+  --address-pool anpi-apim-backend \\
+  --default-address-pool anpi-app-backend \\
+  --http-settings backend-http-settings \\
+  --default-http-settings backend-http-settings \\
+  --name apim-path-rule \\
+  --path-rule-name api-path-rule
+
+# Sau đó tạo routing rule sử dụng URL path map
+az network application-gateway rule create \\
+  --name path-based-rule \\
+  --gateway-name {agw_name} \\
+  --resource-group $RG_NAME \\
+  --http-listener http-listener \\
+  --rule-type PathBasedRouting \\
+  --url-path-map url-path-map \\
+  --priority 200
+
+# 7. Tạo HTTP listener
+az network application-gateway http-listener create \\
+  --name appGatewayHttpListener \\
+  --frontend-ip appGatewayFrontendIP \\
+  --frontend-port frontendPort80 \\
+  --gateway-name {agw_name} \\
+  --resource-group $RG_NAME
 
 # Create WAF policy
 az network application-gateway waf-policy create \\
@@ -127,6 +202,7 @@ az network vnet show --name {vnet_name} --resource-group $RG_NAME -o table
 az network vnet subnet show --name {subnet_name} --resource-group $RG_NAME --vnet-name {vnet_name} -o table
 az network public-ip show --name {pip_name} --resource-group $RG_NAME -o table
 az network application-gateway show --name {agw_name} --resource-group $RG_NAME -o table
+az network application-gateway address-pool list --gateway-name {agw_name} --resource-group $RG_NAME -o table
 az network application-gateway waf-policy show --name {waf_name} --resource-group $RG_NAME -o table
 """
 
@@ -919,7 +995,8 @@ def generate_all_scripts(params):
         params['pip_name'],
         params['agw_name'],
         params['waf_name'],
-        params['apim_name']
+        params['apim_name'],
+        params['app_name']
     )
     
     # Continue with other resources
