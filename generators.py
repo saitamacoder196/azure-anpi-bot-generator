@@ -67,17 +67,6 @@ az network vnet subnet create \\
   --vnet-name {vnet_name} \\
   --address-prefix {subnet_prefix}
 
-# Create Public IP for Application Gateway
-az network public-ip create \\
-  --name {pip_name} \\
-  --resource-group $RG_NAME \\
-  --location $LOCATION \\
-  --allocation-method Static \\
-  --sku Standard \\
-  --zone 1 2 3 \\
-  --dns-name anpi-$ENV \\
-  --tags "$SHARED_TAG"
-
 # Lấy FQDN của APIM và App Service để cấu hình backend pool
 APIM_HOST=$(az apim show --name {apim_name} --resource-group $RG_NAME --query hostnameConfigurations[0].hostName -o tsv)
 if [ -z "$APIM_HOST" ]; then
@@ -86,59 +75,91 @@ fi
 
 APP_SERVICE_HOST="{app_name}.azurewebsites.net"
 
-# Tạo Application Gateway với các thành phần cần thiết
-
-# Tạo Application Gateway
-az network application-gateway create \\
-  --name {agw_name} \\
+# Create Public IP for Application Gateway (if not already created)
+az network public-ip create \\
+  --name pip-itz-anpi-test-jpe-001 \\
   --resource-group $RG_NAME \\
   --location $LOCATION \\
-  --vnet-name {vnet_name} \\
-  --subnet {subnet_name} \\
-  --public-ip-address {pip_name} \\
-  --sku Standard_v2 \\
-  --capacity 2 \\
+  --allocation-method Static \\
+  --sku Standard \\
+  --zone 1 2 3 \\
+  --dns-name anpi-test \\
   --tags "$SHARED_TAG"
 
-# Tạo các thành phần cần thiết cho routing rule
-
-# 1. Tạo frontend port cho HTTP (port 80)
-az network application-gateway frontend-port create \\
-  --name frontend-port-80 \\
-  --port 80 \\
-  --gateway-name {agw_name} \\
-  --resource-group $RG_NAME
-
-# 2. Tạo listener HTTP (lắng nghe trên frontend port)
-az network application-gateway http-listener create \\
-  --name http-listener \\
-  --frontend-port frontend-port-80 \\
-  --frontend-ip appGatewayFrontendIP \\
-  --gateway-name {agw_name} \\
+# Create WAF policy with correct parameter format
+az network application-gateway waf-policy create \\
+  --name waf-itz-test-jpe-001 \\
   --resource-group $RG_NAME \\
-  --protocol Http
+  --location japaneast \\
+  --tags "Environment=Test Project=ITZ-Chatbot" \\
+  --policy-settings state=Enabled mode=Prevention requestBodyCheck=false maxRequestBodySizeInKb=128 fileUploadLimitInMb=100
 
-# 3. Tạo backend pool cho APIM
+# Add managed rule set to WAF policy
+az network application-gateway waf-policy managed-rule-set add \\
+  --policy-name waf-itz-test-jpe-001 \\
+  --resource-group $RG_NAME \\
+  --type Microsoft_DefaultRuleSet \\
+  --version 2.1
+
+# Create Application Gateway with correct configuration
+az network application-gateway create \\
+  --name agw-itz-test-jpe-001 \\
+  --resource-group $RG_NAME \\
+  --location japaneast \\
+  --vnet-name vnet-itz-test-jpe-001 \\
+  --subnet snet-itz-test-jpe-001 \\
+  --public-ip-address pip-itz-anpi-test-jpe-001 \\
+  --sku Standard_v2 \\
+  --min-capacity 0 \\
+  --max-capacity 10 \\
+  --zones 1 2 3 \\
+  --http2 enabled \\
+  --tags "Project=AnpiBot Environment=Test" "Environment=Test Project=ITZ-Chatbot"
+
+# Create backend pool for APIM
 az network application-gateway address-pool create \\
   --name anpi-apim-backend \\
-  --gateway-name {agw_name} \\
+  --gateway-name agw-itz-test-jpe-001 \\
   --resource-group $RG_NAME \\
-  --servers "{apim_name}.azure-api.net"
+  --servers "apim-itz.azure-api.net"
 
-# 4. Tạo backend HTTP settings
+# Also create the second backend pool as shown in template
+az network application-gateway address-pool create \\
+  --name apim-backend-pool \\
+  --gateway-name agw-itz-test-jpe-001 \\
+  --resource-group $RG_NAME \\
+  --servers "apim-itz.azure-api.net"
+
+# Create HTTP settings for backend
 az network application-gateway http-settings create \\
   --name backend-http-settings \\
+  --gateway-name agw-itz-test-jpe-001 \\
+  --resource-group $RG_NAME \\
   --port 80 \\
   --protocol Http \\
   --cookie-based-affinity Disabled \\
-  --timeout 30 \\
-  --gateway-name {agw_name} \\
+  --timeout 30
+
+# Create a frontend port for HTTP (port 80)
+az network application-gateway frontend-port create \\
+  --name port_80 \\
+  --port 80 \\
+  --gateway-name agw-itz-test-jpe-001 \\
   --resource-group $RG_NAME
 
-# 5. Tạo routing rule - kết nối listener với backend pool
+# Create HTTP listener
+az network application-gateway http-listener create \\
+  --name http-listener \\
+  --frontend-port port_80 \\
+  --frontend-ip appGwPublicFrontendIpIPv4 \\
+  --gateway-name agw-itz-test-jpe-001 \\
+  --resource-group $RG_NAME \\
+  --protocol Http
+
+# Create routing rule - matching the template
 az network application-gateway rule create \\
   --name apim-routing-rule \\
-  --gateway-name {agw_name} \\
+  --gateway-name agw-itz-test-jpe-001 \\
   --resource-group $RG_NAME \\
   --http-listener http-listener \\
   --rule-type Basic \\
@@ -146,50 +167,11 @@ az network application-gateway rule create \\
   --http-settings backend-http-settings \\
   --priority 100
 
-# 6. Tạo routing rule
-az network application-gateway url-path-map create \\
-  --name url-path-map \\
-  --paths "/api/*" \\
-  --gateway-name {agw_name} \\
-  --resource-group $RG_NAME \\
-  --address-pool anpi-apim-backend \\
-  --default-address-pool anpi-app-backend \\
-  --http-settings backend-http-settings \\
-  --default-http-settings backend-http-settings \\
-  --name apim-path-rule \\
-  --path-rule-name api-path-rule
-
-# Sau đó tạo routing rule sử dụng URL path map
-az network application-gateway rule create \\
-  --name path-based-rule \\
-  --gateway-name {agw_name} \\
-  --resource-group $RG_NAME \\
-  --http-listener http-listener \\
-  --rule-type PathBasedRouting \\
-  --url-path-map url-path-map \\
-  --priority 200
-
-# 7. Tạo HTTP listener
-az network application-gateway http-listener create \\
-  --name appGatewayHttpListener \\
-  --frontend-ip appGatewayFrontendIP \\
-  --frontend-port frontendPort80 \\
-  --gateway-name {agw_name} \\
-  --resource-group $RG_NAME
-
-# Create WAF policy
-az network application-gateway waf-policy create \\
-  --name {waf_name} \\
-  --resource-group $RG_NAME \\
-  --location $LOCATION \\
-  --policy-settings enabled=true mode=Prevention \\
-  --tags "$SHARED_TAG"
-
 # Associate WAF policy with Application Gateway
-az network application-gateway update \\
-  --name {agw_name} \\
+az network application-gateway waf-policy-link update \\
+  --name agw-itz-test-jpe-001 \\
   --resource-group $RG_NAME \\
-  --waf-policy {waf_name}
+  --policy waf-itz-test-jpe-001
 
 # Verification:
 # Azure Portal: 
