@@ -3,7 +3,7 @@ UI components for the Streamlit application.
 """
 from datetime import datetime
 import streamlit as st
-from utils import get_markdown_download_link, generate_jwt_secret, create_markdown_content, get_settings_download_link, get_yaml_download_link, parse_uploaded_settings
+from utils import get_markdown_download_link, generate_jwt_secret, create_markdown_content, get_settings_download_link, get_yaml_download_link, parse_uploaded_settings, get_full_settings_download_link
 from state import update_jwt_secret
 
 def configure_page():
