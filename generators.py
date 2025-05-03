@@ -95,11 +95,39 @@ az network application-gateway waf-policy create \\
   --policy-settings state=Enabled mode=Prevention requestBodyCheck=false maxRequestBodySizeInKb=128 fileUploadLimitInMb=100
 
 # Add managed rule set to WAF policy
-az network application-gateway waf-policy managed-rule-set add \\
+# List existing rule sets
+echo "Listing existing WAF rule sets..."
+az network application-gateway waf-policy managed-rule rule-set list \\
+  --policy-name waf-itz-test-jpe-001 \\
+  --resource-group $RG_NAME
+
+# Remove any existing rule sets first
+echo "Removing existing rule sets to avoid conflicts..."
+# For Microsoft_BotManagerRuleSet
+az network application-gateway waf-policy managed-rule rule-set remove \\
   --policy-name waf-itz-test-jpe-001 \\
   --resource-group $RG_NAME \\
-  --type Microsoft_DefaultRuleSet \\
-  --version 2.1
+  --type Microsoft_BotManagerRuleSet \\
+  --version 0.1 \\
+  --yes || echo "No Microsoft_BotManagerRuleSet to remove"
+  
+# For OWASP
+for version in "3.0" "3.1" "3.2"; do
+  az network application-gateway waf-policy managed-rule rule-set remove \\
+    --policy-name waf-itz-test-jpe-001 \\
+    --resource-group $RG_NAME \\
+    --type OWASP \\
+    --version $version \\
+    --yes || echo "No OWASP $version rule set to remove"
+done
+
+# Add the desired rule set
+echo "Adding OWASP 3.2 rule set..."
+az network application-gateway waf-policy managed-rule rule-set add \\
+  --policy-name waf-itz-test-jpe-001 \\
+  --resource-group $RG_NAME \\
+  --type OWASP \\
+  --version 3.2
 
 # Create Application Gateway with correct configuration
 az network application-gateway create \\
