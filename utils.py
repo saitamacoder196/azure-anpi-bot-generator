@@ -19,7 +19,7 @@ def get_markdown_download_link(md_content, filename):
         str: HTML link for downloading the content
     """
     b64 = base64.b64encode(md_content.encode()).decode()
-    href = f'<a href="data:file/markdown;base64,{b64}" download="{filename}">Download Markdown</a>'
+    href = f'<a href="data:file/markdown;base64,{b64}" download="{filename}" class="download-button">📄 Download Markdown</a>'
     return href
 
 def generate_jwt_secret():
@@ -134,6 +134,22 @@ def parse_uploaded_settings(uploaded_file):
         return settings
     except Exception as e:
         return None
+        
+def get_full_settings_download_link(settings, filename):
+    """
+    Create a downloadable link for full application settings as JSON
+    
+    Args:
+        settings (dict): Full settings dictionary to download
+        filename (str): Name of the file to download
+        
+    Returns:
+        str: HTML link for downloading the settings
+    """
+    settings_json = json.dumps(settings, indent=2)
+    b64 = base64.b64encode(settings_json.encode()).decode()
+    href = f'<a href="data:file/json;base64,{b64}" download="{filename}" class="download-button">Download Complete Settings</a>'
+    return href
 
 def get_yaml_download_link(api_display_name, env, app_name):
     """

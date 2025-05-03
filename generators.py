@@ -49,7 +49,7 @@ az group show --name $RG_NAME -o table
 """
 
 def generate_networking(vnet_name, vnet_address_prefix, subnet_name, 
-                      subnet_prefix, pip_name, agw_name, waf_name, apim_name, app_name):
+                      subnet_prefix, pip_name, agw_name, waf_name, apim_name, app_name, env="test"):
     """Generate networking script section with App Service backend configured"""
     return f"""
 # Create Virtual Network
@@ -91,7 +91,7 @@ az network application-gateway waf-policy create \\
   --name waf-itz-test-jpe-001 \\
   --resource-group $RG_NAME \\
   --location japaneast \\
-  --tags "Environment=Test Project=ITZ-Chatbot" \\
+  --tags "Environment=$ENVIRONMENT Project=ITZ-Chatbot" \\
   --policy-settings state=Enabled mode=Prevention requestBodyCheck=false maxRequestBodySizeInKb=128 fileUploadLimitInMb=100
 
 # Add managed rule set to WAF policy
@@ -137,12 +137,12 @@ az network application-gateway create \\
   --vnet-name vnet-itz-test-jpe-001 \\
   --subnet snet-itz-test-jpe-001 \\
   --public-ip-address pip-itz-anpi-test-jpe-001 \\
-  --sku Standard_v2 \\
+  --sku WAF_v2 \\
   --min-capacity 0 \\
   --max-capacity 10 \\
   --zones 1 2 3 \\
   --http2 enabled \\
-  --tags "Project=AnpiBot Environment=Test" "Environment=Test Project=ITZ-Chatbot"
+  --tags "Project=AnpiBot Environment=$ENVIRONMENT" "Environment=$ENVIRONMENT Project=ITZ-Chatbot"
 
 # Create backend pool for APIM
 az network application-gateway address-pool create \\
@@ -156,7 +156,8 @@ az network application-gateway address-pool create \\
   --name apim-backend-pool \\
   --gateway-name agw-itz-test-jpe-001 \\
   --resource-group $RG_NAME \\
-  --servers "apim-itz.azure-api.net"
+  --servers "apim-itz.azure-api.net" \\
+  --priority 200
 
 # Create HTTP settings for backend
 az network application-gateway http-settings create \\

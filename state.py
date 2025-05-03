@@ -47,6 +47,23 @@ def initialize_session_state():
             'ms_app_password': 'your-bot-app-password',
             'ms_app_tenant_id': 'your-tenant-id'
         }
+    
+    # Initialize tab settings storage
+    if 'tab_settings' not in st.session_state:
+        st.session_state['tab_settings'] = {
+            'basic_resources': {},
+            'networking': {},
+            'app_service': {},
+            'data_ai': {},
+            'api_management': {},
+            'teams_integration': {}
+        }
+        
+    # Initialize state for file upload visibility
+    for tab in ['basic', 'networking', 'app_service', 'data_ai', 'api_mgmt', 'teams']:
+        uploader_key = f'show_{tab}_uploader'
+        if uploader_key not in st.session_state:
+            st.session_state[uploader_key] = False
 
 def update_generated_scripts(scripts_dict):
     """Update the generated scripts in session state"""
@@ -60,3 +77,64 @@ def update_jwt_secret(new_secret):
 def update_sidebar_values(values_dict):
     """Update the sidebar values in session state"""
     st.session_state['sidebar_values'] = values_dict
+    
+def save_tab_settings(tab_name, settings_dict):
+    """
+    Save settings for a specific tab to session state
+    
+    Args:
+        tab_name (str): The name of the tab (e.g., 'basic_resources', 'networking')
+        settings_dict (dict): Dictionary containing the tab's settings
+    """
+    if 'tab_settings' not in st.session_state:
+        st.session_state['tab_settings'] = {}
+    
+    st.session_state['tab_settings'][tab_name] = settings_dict
+    
+def load_tab_settings(tab_name):
+    """
+    Load settings for a specific tab from session state
+    
+    Args:
+        tab_name (str): The name of the tab to load settings for
+        
+    Returns:
+        dict: The saved settings for the tab or an empty dict if none exist
+    """
+    if 'tab_settings' not in st.session_state or tab_name not in st.session_state['tab_settings']:
+        return {}
+    
+    return st.session_state['tab_settings'][tab_name]
+    
+def get_all_settings():
+    """
+    Get all settings from all tabs and the sidebar
+    
+    Returns:
+        dict: Complete settings dictionary with all tabs' settings
+    """
+    if 'tab_settings' not in st.session_state:
+        st.session_state['tab_settings'] = {}
+        
+    # Combine all settings
+    all_settings = {
+        'sidebar': st.session_state.get('sidebar_values', {}),
+        'tabs': st.session_state['tab_settings']
+    }
+    
+    return all_settings
+    
+def load_all_settings(settings_dict):
+    """
+    Load complete settings into session state
+    
+    Args:
+        settings_dict (dict): Dictionary containing all settings
+    """
+    # Update sidebar values
+    if 'sidebar' in settings_dict:
+        st.session_state['sidebar_values'] = settings_dict['sidebar']
+        
+    # Update tab settings
+    if 'tabs' in settings_dict:
+        st.session_state['tab_settings'] = settings_dict['tabs']
