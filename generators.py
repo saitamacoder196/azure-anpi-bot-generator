@@ -67,14 +67,6 @@ az network vnet subnet create \\
   --vnet-name {vnet_name} \\
   --address-prefix {subnet_prefix}
 
-# Lấy FQDN của APIM và App Service để cấu hình backend pool
-APIM_HOST=$(az apim show --name {apim_name} --resource-group $RG_NAME --query hostnameConfigurations[0].hostName -o tsv)
-if [ -z "$APIM_HOST" ]; then
-  APIM_HOST="{apim_name}.azure-api.net"
-fi
-
-APP_SERVICE_HOST="{app_name}.azurewebsites.net"
-
 # Create Public IP for Application Gateway (if not already created)
 az network public-ip create \\
   --name {pip_name} \\
@@ -94,41 +86,6 @@ az network application-gateway waf-policy create \\
   --tags "Environment=$ENVIRONMENT Project=ITZ-Chatbot" \\
   --policy-settings state=Enabled mode=Prevention requestBodyCheck=false maxRequestBodySizeInKb=128 fileUploadLimitInMb=100
 
-# Add managed rule set to WAF policy
-# List existing rule sets
-echo "Listing existing WAF rule sets..."
-az network application-gateway waf-policy managed-rule rule-set list \\
-  --policy-name {waf_name} \\
-  --resource-group $RG_NAME
-
-# Remove any existing rule sets first
-echo "Removing existing rule sets to avoid conflicts..."
-# For Microsoft_BotManagerRuleSet
-az network application-gateway waf-policy managed-rule rule-set remove \\
-  --policy-name {waf_name} \\
-  --resource-group $RG_NAME \\
-  --type Microsoft_BotManagerRuleSet \\
-  --version 0.1 \\
-  --yes || echo "No Microsoft_BotManagerRuleSet to remove"
-  
-# For OWASP
-for version in "3.0" "3.1" "3.2"; do
-  az network application-gateway waf-policy managed-rule rule-set remove \\
-    --policy-name {waf_name} \\
-    --resource-group $RG_NAME \\
-    --type OWASP \\
-    --version $version \\
-    --yes || echo "No OWASP $version rule set to remove"
-done
-
-# Add the desired rule set
-echo "Adding OWASP 3.2 rule set..."
-az network application-gateway waf-policy managed-rule rule-set add \\
-  --policy-name {waf_name} \\
-  --resource-group $RG_NAME \\
-  --type OWASP \\
-  --version 3.2
-
 # Create Application Gateway with correct configuration
 az network application-gateway create \\
   --name {agw_name} \\
@@ -146,13 +103,6 @@ az network application-gateway create \\
 
 # Create backend pool for APIM
 az network application-gateway address-pool create \\
-  --name anpi-apim-backend \\
-  --gateway-name {agw_name} \\
-  --resource-group $RG_NAME \\
-  --servers "$APIM_HOST"
-
-# Also create the second backend pool as shown in template
-az network application-gateway address-pool create \\
   --name apim-backend-pool \\
   --gateway-name {agw_name} \\
   --resource-group $RG_NAME \\
@@ -169,13 +119,6 @@ az network application-gateway http-settings create \\
   --cookie-based-affinity Disabled \\
   --timeout 30
 
-# Create a frontend port for HTTP (port 80)
-az network application-gateway frontend-port create \\
-  --name port_80 \\
-  --port 80 \\
-  --gateway-name {agw_name} \\
-  --resource-group $RG_NAME
-
 # Create HTTP listener
 az network application-gateway http-listener create \\
   --name http-listener \\
@@ -184,23 +127,6 @@ az network application-gateway http-listener create \\
   --gateway-name {agw_name} \\
   --resource-group $RG_NAME \\
   --protocol Http
-
-# Create routing rule - matching the template
-az network application-gateway rule create \\
-  --name apim-routing-rule \\
-  --gateway-name {agw_name} \\
-  --resource-group $RG_NAME \\
-  --http-listener http-listener \\
-  --rule-type Basic \\
-  --address-pool anpi-apim-backend \\
-  --http-settings backend-http-settings \\
-  --priority 100
-
-# Associate WAF policy with Application Gateway
-az network application-gateway waf-policy-link update \\
-  --name {agw_name} \\
-  --resource-group $RG_NAME \\
-  --policy {waf_name}
 
 # Verification:
 # Azure Portal: 
