@@ -49,7 +49,7 @@ az group show --name $RG_NAME -o table
 """
 
 def generate_networking(vnet_name, vnet_address_prefix, subnet_name, 
-                      subnet_prefix, pip_name, agw_name, waf_name, apim_name, app_name, env="test"):
+                      subnet_prefix, pip_name, agw_name, waf_name, apim_name, app_name, env):
     """Generate networking script section with App Service backend configured"""
     return f"""
 # Create Virtual Network
@@ -77,20 +77,20 @@ APP_SERVICE_HOST="{app_name}.azurewebsites.net"
 
 # Create Public IP for Application Gateway (if not already created)
 az network public-ip create \\
-  --name pip-itz-anpi-test-jpe-001 \\
+  --name {pip_name} \\
   --resource-group $RG_NAME \\
   --location $LOCATION \\
   --allocation-method Static \\
   --sku Standard \\
   --zone 1 2 3 \\
-  --dns-name anpi-test \\
+  --dns-name anpi-{env.lower()} \\
   --tags "$SHARED_TAG"
 
 # Create WAF policy with correct parameter format
 az network application-gateway waf-policy create \\
-  --name waf-itz-test-jpe-001 \\
+  --name {waf_name} \\
   --resource-group $RG_NAME \\
-  --location japaneast \\
+  --location $LOCATION \\
   --tags "Environment=$ENVIRONMENT Project=ITZ-Chatbot" \\
   --policy-settings state=Enabled mode=Prevention requestBodyCheck=false maxRequestBodySizeInKb=128 fileUploadLimitInMb=100
 
@@ -98,14 +98,14 @@ az network application-gateway waf-policy create \\
 # List existing rule sets
 echo "Listing existing WAF rule sets..."
 az network application-gateway waf-policy managed-rule rule-set list \\
-  --policy-name waf-itz-test-jpe-001 \\
+  --policy-name {waf_name} \\
   --resource-group $RG_NAME
 
 # Remove any existing rule sets first
 echo "Removing existing rule sets to avoid conflicts..."
 # For Microsoft_BotManagerRuleSet
 az network application-gateway waf-policy managed-rule rule-set remove \\
-  --policy-name waf-itz-test-jpe-001 \\
+  --policy-name {waf_name} \\
   --resource-group $RG_NAME \\
   --type Microsoft_BotManagerRuleSet \\
   --version 0.1 \\
@@ -114,7 +114,7 @@ az network application-gateway waf-policy managed-rule rule-set remove \\
 # For OWASP
 for version in "3.0" "3.1" "3.2"; do
   az network application-gateway waf-policy managed-rule rule-set remove \\
-    --policy-name waf-itz-test-jpe-001 \\
+    --policy-name {waf_name} \\
     --resource-group $RG_NAME \\
     --type OWASP \\
     --version $version \\
@@ -124,19 +124,19 @@ done
 # Add the desired rule set
 echo "Adding OWASP 3.2 rule set..."
 az network application-gateway waf-policy managed-rule rule-set add \\
-  --policy-name waf-itz-test-jpe-001 \\
+  --policy-name {waf_name} \\
   --resource-group $RG_NAME \\
   --type OWASP \\
   --version 3.2
 
 # Create Application Gateway with correct configuration
 az network application-gateway create \\
-  --name agw-itz-test-jpe-001 \\
+  --name {agw_name} \\
   --resource-group $RG_NAME \\
-  --location japaneast \\
-  --vnet-name vnet-itz-test-jpe-001 \\
-  --subnet snet-itz-test-jpe-001 \\
-  --public-ip-address pip-itz-anpi-test-jpe-001 \\
+  --location $LOCATION \\
+  --vnet-name {vnet_name} \\
+  --subnet {subnet_name} \\
+  --public-ip-address {pip_name} \\
   --sku WAF_v2 \\
   --min-capacity 0 \\
   --max-capacity 10 \\
@@ -147,22 +147,22 @@ az network application-gateway create \\
 # Create backend pool for APIM
 az network application-gateway address-pool create \\
   --name anpi-apim-backend \\
-  --gateway-name agw-itz-test-jpe-001 \\
+  --gateway-name {agw_name} \\
   --resource-group $RG_NAME \\
-  --servers "apim-itz.azure-api.net"
+  --servers "$APIM_HOST"
 
 # Also create the second backend pool as shown in template
 az network application-gateway address-pool create \\
   --name apim-backend-pool \\
-  --gateway-name agw-itz-test-jpe-001 \\
+  --gateway-name {agw_name} \\
   --resource-group $RG_NAME \\
-  --servers "apim-itz.azure-api.net" \\
+  --servers "$APIM_HOST" \\
   --priority 200
 
 # Create HTTP settings for backend
 az network application-gateway http-settings create \\
   --name backend-http-settings \\
-  --gateway-name agw-itz-test-jpe-001 \\
+  --gateway-name {agw_name} \\
   --resource-group $RG_NAME \\
   --port 80 \\
   --protocol Http \\
@@ -173,7 +173,7 @@ az network application-gateway http-settings create \\
 az network application-gateway frontend-port create \\
   --name port_80 \\
   --port 80 \\
-  --gateway-name agw-itz-test-jpe-001 \\
+  --gateway-name {agw_name} \\
   --resource-group $RG_NAME
 
 # Create HTTP listener
@@ -181,14 +181,14 @@ az network application-gateway http-listener create \\
   --name http-listener \\
   --frontend-port port_80 \\
   --frontend-ip appGwPublicFrontendIpIPv4 \\
-  --gateway-name agw-itz-test-jpe-001 \\
+  --gateway-name {agw_name} \\
   --resource-group $RG_NAME \\
   --protocol Http
 
 # Create routing rule - matching the template
 az network application-gateway rule create \\
   --name apim-routing-rule \\
-  --gateway-name agw-itz-test-jpe-001 \\
+  --gateway-name {agw_name} \\
   --resource-group $RG_NAME \\
   --http-listener http-listener \\
   --rule-type Basic \\
@@ -198,9 +198,9 @@ az network application-gateway rule create \\
 
 # Associate WAF policy with Application Gateway
 az network application-gateway waf-policy-link update \\
-  --name agw-itz-test-jpe-001 \\
+  --name {agw_name} \\
   --resource-group $RG_NAME \\
-  --policy waf-itz-test-jpe-001
+  --policy {waf_name}
 
 # Verification:
 # Azure Portal: 
@@ -343,7 +343,7 @@ COSMOS_CONNECTION_STRING=$(az cosmosdb keys list \\
 az cognitiveservices account create \\
   --name {openai_name} \\
   --resource-group $RG_NAME \\
-  --location eastus \\
+  --location $LOCATION \\
   --kind OpenAI \\
   --sku S0 \\
   --tags "$SHARED_TAG"
