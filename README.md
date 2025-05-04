@@ -1,8 +1,20 @@
-# CLAUDE.md
+# Azure Deployment Generator
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+A Streamlit application for generating Azure deployment scripts and configurations.
 
-## Commands
+## Repository
+
+```
+https://github.com/saitamacoder196/azure-anpi-bot-generator.git
+```
+
+## Setup
+
+### Clone Repository
+```bash
+git clone https://github.com/saitamacoder196/azure-anpi-bot-generator.git
+cd azure-deployment-generator
+```
 
 ### Activate Conda Environment
 ```bash
@@ -15,8 +27,20 @@ conda activate azure-deployment-generator
 conda activate azure-deployment-generator
 ```
 
-- Run application: `streamlit run app.py`
-- Install dependencies: `pip install -r requirements.txt`
+### Installation
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+
+Run the application:
+```bash
+streamlit run app.py
+```
+
+## Development
+
 - Formatting: `black .` (if installed)
 - Type checking: `mypy .` (if installed)
 
@@ -31,4 +55,4 @@ conda activate azure-deployment-generator
 - **String Formatting**: Use f-strings for string interpolation
 - **Comments**: Add meaningful comments for complex logic only
 - **Session State**: Use Streamlit's st.session_state for persisting data between reruns
-EOF < /dev/null
+EOL < /dev/null
