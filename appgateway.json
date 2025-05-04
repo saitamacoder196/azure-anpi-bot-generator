@@ -1,0 +1,157 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "applicationGatewayName": {
+      "type": "string",
+      "defaultValue": "agw-itz-test-jpe-001",
+      "metadata": {
+        "description": "Application Gateway name"
+      }
+    },
+    "vnetName": {
+      "type": "string",
+      "defaultValue": "vnet-itz-test-jpe-001",
+      "metadata": {
+        "description": "Virtual Network name"
+      }
+    },
+    "subnetName": {
+      "type": "string",
+      "defaultValue": "snet-itz-test-jpe-001",
+      "metadata": {
+        "description": "Subnet name"
+      }
+    },
+    "publicIpName": {
+      "type": "string",
+      "defaultValue": "pip-itz-anpi-test-jpe-001",
+      "metadata": {
+        "description": "Public IP name"
+      }
+    },
+    "environment": {
+      "type": "string",
+      "defaultValue": "Test",
+      "metadata": {
+        "description": "Environment name"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for all resources"
+      }
+    }
+  },
+  "variables": {
+    "appGwPublicIPRef": "[resourceId('Microsoft.Network/publicIPAddresses', parameters('publicIpName'))]",
+    "appGwId": "[resourceId('Microsoft.Network/applicationGateways', parameters('applicationGatewayName'))]",
+    "subnetRef": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('subnetName'))]"
+  },
+  "resources": [
+    {
+      "apiVersion": "2021-05-01",
+      "type": "Microsoft.Network/applicationGateways",
+      "name": "[parameters('applicationGatewayName')]",
+      "location": "[parameters('location')]",
+      "tags": {
+        "Project": "AnpiBot",
+        "Environment": "[parameters('environment')]"
+      },
+      "properties": {
+        "sku": {
+          "name": "Standard_v2",
+          "tier": "Standard_v2"
+        },
+        "autoscaleConfiguration": {
+          "minCapacity": 0,
+          "maxCapacity": 10
+        },
+        "gatewayIPConfigurations": [
+          {
+            "name": "appGatewayIpConfig",
+            "properties": {
+              "subnet": {
+                "id": "[variables('subnetRef')]"
+              }
+            }
+          }
+        ],
+        "frontendIPConfigurations": [
+          {
+            "name": "appGatewayFrontendIP",
+            "properties": {
+              "publicIPAddress": {
+                "id": "[variables('appGwPublicIPRef')]"
+              }
+            }
+          }
+        ],
+        "frontendPorts": [
+          {
+            "name": "appGatewayFrontendPort",
+            "properties": {
+              "port": 80
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "appGatewayBackendPool",
+            "properties": {
+              "backendAddresses": []
+            }
+          }
+        ],
+        "backendHttpSettingsCollection": [
+          {
+            "name": "appGatewayBackendHttpSettings",
+            "properties": {
+              "port": 80,
+              "protocol": "Http",
+              "cookieBasedAffinity": "Disabled",
+              "pickHostNameFromBackendAddress": false,
+              "requestTimeout": 30
+            }
+          }
+        ],
+        "httpListeners": [
+          {
+            "name": "appGatewayHttpListener",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[concat(variables('appGwId'), '/frontendIPConfigurations/appGatewayFrontendIP')]"
+              },
+              "frontendPort": {
+                "id": "[concat(variables('appGwId'), '/frontendPorts/appGatewayFrontendPort')]"
+              },
+              "protocol": "Http",
+              "requireServerNameIndication": false
+            }
+          }
+        ],
+        "requestRoutingRules": [
+          {
+            "name": "rule1",
+            "properties": {
+              "ruleType": "Basic",
+              "httpListener": {
+                "id": "[concat(variables('appGwId'), '/httpListeners/appGatewayHttpListener')]"
+              },
+              "backendAddressPool": {
+                "id": "[concat(variables('appGwId'), '/backendAddressPools/appGatewayBackendPool')]"
+              },
+              "backendHttpSettings": {
+                "id": "[concat(variables('appGwId'), '/backendHttpSettingsCollection/appGatewayBackendHttpSettings')]"
+              },
+              "priority": 100
+            }
+          }
+        ],
+        "enableHttp2": false
+      }
+    }
+  ]
+}

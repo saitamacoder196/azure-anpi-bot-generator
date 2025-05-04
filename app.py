@@ -87,9 +87,26 @@ def main():
         
         # Generate CLI commands button
         if st.button("📜 Generate Azure CLI Commands", key="generate_cli_button", use_container_width=True):
-            # Combine all parameters
+            # Make sure we have the latest values from all sources
+            sidebar_values = st.session_state.sidebar_values
+            jwt_secret = st.session_state.get('jwt_secret_key', '')
+            
+            # Create a comprehensive params dictionary with all required parameters
             params = {
-                **sidebar_values,
+                # Environment Settings from sidebar
+                'env': sidebar_values.get('env', 'dev'),
+                'subscription_id': sidebar_values.get('subscription_id', ''),
+                'location': sidebar_values.get('location', 'japaneast'),
+                
+                # Bot Settings from sidebar
+                'ms_app_id': sidebar_values.get('ms_app_id', ''),
+                'ms_app_password': sidebar_values.get('ms_app_password', ''),
+                'ms_app_tenant_id': sidebar_values.get('ms_app_tenant_id', ''),
+                
+                # JWT Secret Key
+                'jwt_secret_key': jwt_secret,
+                
+                # Settings from all tabs
                 **basic_resources,
                 **networking,
                 **app_service,

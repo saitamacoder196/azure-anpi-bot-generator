@@ -43,7 +43,7 @@ az account set --subscription "$SUBSCRIPTION_ID"
 az group create --name $RG_NAME --location $LOCATION --tags "$SHARED_TAG"
 
 # Verification:
-# Azure Portal: Go to Resource Groups and search for {rg_name}
+# Azure Portal: Go to Resource Groups and search for the resource group
 # CLI Verification:
 az group show --name $RG_NAME -o table
 """
@@ -67,7 +67,7 @@ az network vnet subnet create \\
   --vnet-name {vnet_name} \\
   --address-prefix {subnet_prefix}
 
-# Create Public IP for Application Gateway (if not already created)
+# Create Public IP for Application Gateway
 az network public-ip create \\
   --name {pip_name} \\
   --resource-group $RG_NAME \\
@@ -86,7 +86,25 @@ az network application-gateway waf-policy create \\
   --tags "Environment=$ENVIRONMENT Project=ITZ-Chatbot" \\
   --policy-settings state=Enabled mode=Prevention requestBodyCheck=false maxRequestBodySizeInKb=128 fileUploadLimitInMb=100
 
-# Create Application Gateway with correct configuration
+# Get WAF policy ID for use in Application Gateway creation
+WAF_POLICY_ID=$(az network application-gateway waf-policy show --name {waf_name} --resource-group $RG_NAME --query id -o tsv)
+
+# Get the API endpoint from APIM for backend configuration - using more compatible approach
+APIM_HOST=$(az apim show --name {apim_name} --resource-group $RG_NAME --query hostname -o tsv)
+
+# If the above doesn't work (depends on Azure CLI version), try this alternative:
+if [ -z "$APIM_HOST" ]; then
+  # Get the full URL and extract just the hostname part using bash string manipulation
+  APIM_GATEWAY_URL=$(az apim show --name {apim_name} --resource-group $RG_NAME --query properties.gatewayUrl -o tsv)
+  APIM_HOST=${{APIM_GATEWAY_URL#https://}}
+  # Use string replacement to remove any path component if present
+  APIM_HOST=${{APIM_HOST%%/*}}
+fi
+
+# Use a simpler approach for the initial Application Gateway
+echo "Creating Application Gateway with minimal configuration..."
+
+# Create a default Application Gateway with priority specified for the routing rule
 az network application-gateway create \\
   --name {agw_name} \\
   --resource-group $RG_NAME \\
@@ -94,14 +112,59 @@ az network application-gateway create \\
   --vnet-name {vnet_name} \\
   --subnet {subnet_name} \\
   --public-ip-address {pip_name} \\
-  --sku WAF_v2 \\
-  --min-capacity 0 \\
-  --max-capacity 10 \\
-  --zones 1 2 3 \\
-  --http2 enabled \\
+  --sku Standard_v2 \\
+  --capacity 2 \\
+  --frontend-port 80 \\
+  --http-settings-cookie-based-affinity Disabled \\
+  --http-settings-port 80 \\
+  --http-settings-protocol Http \\
+  --routing-rule-type Basic \\
+  --routing-rule-priority 100 \\
   --tags "Project=AnpiBot Environment=$ENVIRONMENT" "Environment=$ENVIRONMENT Project=ITZ-Chatbot"
 
-# Create backend pool for APIM
+# Then upgrade to WAF_v2 with WAF policy
+echo "Upgrading to WAF_v2 and configuring advanced settings..."
+az network application-gateway update \\
+  --name {agw_name} \\
+  --resource-group $RG_NAME \\
+  --sku WAF_v2 \\
+  --enable-http2
+
+# Set autoscale configuration
+echo "Setting autoscale configuration..."
+az network application-gateway autoscale-configuration update \\
+  --gateway-name {agw_name} \\
+  --resource-group $RG_NAME \\
+  --min-capacity 0 \\
+  --max-capacity 10
+
+# Set availability zones
+echo "Setting availability zones..."
+az network application-gateway update \\
+  --name {agw_name} \\
+  --resource-group $RG_NAME \\
+  --zones 1 2 3
+
+# Then update the Application Gateway to attach the WAF policy
+echo "Linking WAF policy..."
+az network application-gateway waf-policy-link update \\
+  --resource-group $RG_NAME \\
+  --gateway-name {agw_name} \\
+  --policy $WAF_POLICY_ID
+
+# Get name of the default HTTP listener
+LISTENER_NAME=$(az network application-gateway http-listener list \\
+  --gateway-name {agw_name} \\
+  --resource-group $RG_NAME \\
+  --query "[0].name" -o tsv)
+
+# Get name of the default HTTP settings
+HTTP_SETTINGS_NAME=$(az network application-gateway http-settings list \\
+  --gateway-name {agw_name} \\
+  --resource-group $RG_NAME \\
+  --query "[0].name" -o tsv)
+
+# Update the backend pool to point to APIM backend
 az network application-gateway address-pool create \\
   --name apim-backend-pool \\
   --gateway-name {agw_name} \\
@@ -109,24 +172,16 @@ az network application-gateway address-pool create \\
   --servers "$APIM_HOST" \\
   --priority 200
 
-# Create HTTP settings for backend
-az network application-gateway http-settings create \\
-  --name backend-http-settings \\
+# Create a new rule to use our APIM backend pool
+az network application-gateway rule create \\
   --gateway-name {agw_name} \\
   --resource-group $RG_NAME \\
-  --port 80 \\
-  --protocol Http \\
-  --cookie-based-affinity Disabled \\
-  --timeout 30
-
-# Create HTTP listener
-az network application-gateway http-listener create \\
-  --name http-listener \\
-  --frontend-port port_80 \\
-  --frontend-ip appGwPublicFrontendIpIPv4 \\
-  --gateway-name {agw_name} \\
-  --resource-group $RG_NAME \\
-  --protocol Http
+  --name "apim-rule" \\
+  --http-listener "$LISTENER_NAME" \\
+  --http-settings "$HTTP_SETTINGS_NAME" \\
+  --address-pool "apim-backend-pool" \\
+  --priority 100 \\
+  --rule-type Basic
 
 # Verification:
 # Azure Portal: 
@@ -141,6 +196,7 @@ az network public-ip show --name {pip_name} --resource-group $RG_NAME -o table
 az network application-gateway show --name {agw_name} --resource-group $RG_NAME -o table
 az network application-gateway address-pool list --gateway-name {agw_name} --resource-group $RG_NAME -o table
 az network application-gateway waf-policy show --name {waf_name} --resource-group $RG_NAME -o table
+az network application-gateway rule list --gateway-name {agw_name} --resource-group $RG_NAME -o table
 """
 
 def generate_app_service(asp_name, asp_sku, appinsights_name):
@@ -488,7 +544,7 @@ az apim api operation list --api-id {api_id} --service-name {apim_name} --resour
 def generate_web_app(app_name, asp_name, app_runtime, kv_name, 
                    apim_name, api_id, allowed_origins, jwt_issuer, 
                    jwt_expiry_minutes, cosmos_db_name, search_index_name, 
-                   semantic_config_name):
+                   semantic_config_name, api_base_url, timeout_minutes, jwt_secret_key):
     """Generate web app script section"""
     return f"""
 # Create Web App
@@ -572,7 +628,7 @@ rm /tmp/apim-policy.xml
 az keyvault secret set --vault-name {kv_name} --name anpi-MicrosoftAppId --value "$MS_APP_ID"
 az keyvault secret set --vault-name {kv_name} --name anpi-MicrosoftAppPassword --value "$MS_APP_PASSWORD"
 az keyvault secret set --vault-name {kv_name} --name anpi-MicrosoftAppTenantId --value "$MS_APP_TENANT_ID"
-az keyvault secret set --vault-name {kv_name} --name anpi-JwtSecretKey --value "{{jwt_secret_key}}"
+az keyvault secret set --vault-name {kv_name} --name anpi-JwtSecretKey --value "{jwt_secret_key}"
 az keyvault secret set --vault-name {kv_name} --name anpi-CosmosDbConnectionString --value "$COSMOS_CONNECTION_STRING"
 az keyvault secret set --vault-name {kv_name} --name anpi-AzureOpenAIKey --value "$AZURE_OPENAI_KEY"
 az keyvault secret set --vault-name {kv_name} --name anpi-AzureSearchApiKey --value "$AZURE_SEARCH_KEY"
@@ -600,8 +656,8 @@ az webapp config appsettings set \\
   APPLICATIONINSIGHTS_CONNECTION_STRING="$APPINSIGHTS_CONNECTION_STRING" \\
   Environment="$ENVIRONMENT" \\
   ApplicationName="ANPI Bot ${{ENVIRONMENT}}" \\
-  ApiBaseUrl="{{api_base_url}}" \\
-  TimeoutMinutes="{{timeout_minutes}}" \\
+  ApiBaseUrl="{api_base_url}" \\
+  TimeoutMinutes="{timeout_minutes}" \\
   AllowedOrigins='{allowed_origins}' \\
   JwtSettings__Issuer="{jwt_issuer}" \\
   JwtSettings__Audience="$MS_APP_ID" \\
@@ -703,7 +759,7 @@ az keyvault secret show --vault-name {kv_name} --name anpi-TeamsAppId --query va
 """
 
 def generate_network_verification(app_name, kv_name, cosmos_name, cosmos_db_name, 
-                                apim_name, agw_name, pip_name, search_name):
+                                apim_name, agw_name, pip_name, search_name, api_path):
     """Generate network verification script section"""
     return f"""
 # ===== Network and Resource Connectivity Verification =====
@@ -827,10 +883,23 @@ else
   echo "App Service URL: $APP_URL"
 fi
 
-# Test API call through APIM
-APIM_URL=$(az apim show --name {apim_name} --resource-group $RG_NAME --query gatewayUrl -o tsv)
+# Test API call through APIM - using more compatible approach
+# Get Gateway URL without using sed
+APIM_URL=$(az apim show --name {apim_name} --resource-group $RG_NAME --query "properties.gatewayUrl" -o tsv)
+
+# If empty, construct the URL from hostname
+if [ -z "$APIM_URL" ]; then
+  APIM_HOSTNAME=$(az apim show --name {apim_name} --resource-group $RG_NAME --query "properties.hostnameConfigurations[0].hostName" -o tsv)
+  if [ -n "$APIM_HOSTNAME" ]; then
+    APIM_URL="https://$APIM_HOSTNAME"
+  else
+    # Fallback to constructing from name
+    APIM_URL="https://{apim_name}.azure-api.net"
+  fi
+fi
+
 echo "To test API Management connectivity to App Service, run:"
-echo "curl -v $APIM_URL/{{api_path}}/api/alive"
+echo "curl -v $APIM_URL/{api_path}/api/alive"
 
 # 5. Test Application Gateway connectivity
 echo "Verifying Application Gateway connectivity..."
@@ -890,15 +959,17 @@ echo "Deployment completed successfully!"
 
 def generate_all_scripts(params):
     """Generate all script sections based on input parameters with APIM first, then Application Gateway"""
+    # Extract environment value first to use consistently
+    env = params['env']
     
     # Generate individual sections
     env_vars = generate_environment_vars(
-        params['env'],
+        env,
         params['subscription_id'],
         params['location'],
         params['rg_name'],
-        params['anpi_tag'],
-        params['shared_tag'],
+        params['anpi_tag'].replace('Dev', env.capitalize()),  # Fix tags to use correct environment
+        params['shared_tag'].replace('Dev', env.capitalize()), # Fix tags to use correct environment
         params['ms_app_id'],
         params['ms_app_password'],
         params['ms_app_tenant_id'],
@@ -910,6 +981,22 @@ def generate_all_scripts(params):
     
     resource_group = generate_resource_group()
     
+    # Generate resource names with correct environment
+    vnet_name = params['vnet_name'].replace('dev', env.lower())
+    subnet_name = params['subnet_name'].replace('dev', env.lower())
+    pip_name = params['pip_name'].replace('dev', env.lower())
+    agw_name = params['agw_name'].replace('dev', env.lower())
+    waf_name = params['waf_name'].replace('dev', env.lower())
+    asp_name = params['asp_name'].replace('dev', env.lower())
+    appinsights_name = params['appinsights_name'].replace('dev', env.lower())
+    kv_name = params['kv_name'].replace('dev', env.lower())
+    cosmos_name = params['cosmos_name'].replace('dev', env.lower())
+    openai_name = params['openai_name'].replace('dev', env.lower())
+    search_name = params['search_name'].replace('dev', env.lower())
+    app_name = params['app_name'].replace('dev', env.lower())
+    bot_name = params['bot_name'].replace('dev', env.lower())
+    teams_app_name = params['teams_app_name'].replace('Dev', env.capitalize())
+    
     # Create API Management first
     api_mgmt = generate_api_management(
         params['apim_name'],
@@ -920,50 +1007,50 @@ def generate_all_scripts(params):
         params['api_path'],
         params['api_display_name'],
         params['location'],
-        params['app_name']
+        app_name  # Use corrected app_name
     )
 
     # Then create networking with references to APIM
     networking = generate_networking(
-        params['vnet_name'],
+        vnet_name,  # Use corrected name
         params['vnet_address_prefix'],
-        params['subnet_name'],
+        subnet_name,  # Use corrected name
         params['subnet_prefix'],
-        params['pip_name'],
-        params['agw_name'],
-        params['waf_name'],
+        pip_name,  # Use corrected name
+        agw_name,  # Use corrected name
+        waf_name,  # Use corrected name
         params['apim_name'],
-        params['app_name'],
-        params['env']
+        app_name,  # Use corrected name
+        env
     )
     
     # Continue with other resources
     app_service = generate_app_service(
-        params['asp_name'],
+        asp_name,  # Use corrected name
         params['asp_sku'],
-        params['appinsights_name']
+        appinsights_name  # Use corrected name
     )
     
     data_ai = generate_data_ai_services(
-        params['kv_name'],
-        params['cosmos_name'],
+        kv_name,  # Use corrected name
+        cosmos_name,  # Use corrected name
         params['cosmos_db_name'],
-        params['openai_name'],
+        openai_name,  # Use corrected name
         params['openai_model'],
         params['model_version'],
         params['embedding_model'],
         params['embedding_model_version'],
-        params['search_name'],
+        search_name,  # Use corrected name
         params['search_sku'],
         params['search_index_name'],
         params['semantic_config_name']
     )
     
     web_app = generate_web_app(
-        params['app_name'],
-        params['asp_name'],
+        app_name,  # Use corrected name
+        asp_name,  # Use corrected name
         params['app_runtime'],
-        params['kv_name'],
+        kv_name,  # Use corrected name
         params['apim_name'],
         params['api_id'],
         params['allowed_origins'],
@@ -971,36 +1058,40 @@ def generate_all_scripts(params):
         params['jwt_expiry_minutes'],
         params['cosmos_db_name'],
         params['search_index_name'],
-        params['semantic_config_name']
+        params['semantic_config_name'],
+        params['api_base_url'],
+        params['timeout_minutes'],
+        params['jwt_secret_key']
     )
     
     bot_service = generate_bot_service(
-        params['bot_name'],
-        params['app_name'],
+        bot_name,  # Use corrected name
+        app_name,  # Use corrected name
         params['apim_name'],
         params['api_id']
     )
     
     teams_integration = generate_teams_integration(
-        params['teams_app_name'],
+        teams_app_name,  # Use corrected name
         params['teams_redirect_uri'],
-        params['kv_name']
+        kv_name  # Use corrected name
     )
     
     network_verification = generate_network_verification(
-        params['app_name'],
-        params['kv_name'],
-        params['cosmos_name'],
+        app_name,  # Use corrected name
+        kv_name,  # Use corrected name
+        cosmos_name,  # Use corrected name
         params['cosmos_db_name'],
         params['apim_name'],
-        params['agw_name'],
-        params['pip_name'],
-        params['search_name']
+        agw_name,  # Use corrected name
+        pip_name,  # Use corrected name
+        search_name,  # Use corrected name
+        params['api_path']
     )
     
     # Generate complete script - reordering sections with API Management first
     complete_script = generate_complete_script(
-        params['env'],
+        env,
         env_vars,
         resource_group,
         api_mgmt,      # APIM first
