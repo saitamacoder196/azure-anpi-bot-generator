@@ -1007,7 +1007,8 @@ def generate_all_scripts(params):
         params['agw_name'],
         params['waf_name'],
         params['apim_name'],
-        params['app_name']
+        params['app_name'],
+        params['env']
     )
     
     # Continue with other resources
