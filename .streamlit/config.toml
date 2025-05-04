@@ -1,0 +1,13 @@
+[server]
+enableXsrfProtection = false
+enableCORS = false
+
+[theme]
+primaryColor = "#007fff"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+
+[deprecation]
+showPyplotGlobalUse = false

@@ -37,7 +37,7 @@ def create_sidebar():
         # Add export/import section at the top
         with st.expander("Export/Import Settings", expanded=False):
             # Export all settings (complete application settings)
-            if st.button("Export All Settings"):
+            if st.button("Export All Settings", key="export_all_settings_sidebar"):
                 from state import get_all_settings
                 # Get all settings from session state
                 all_settings = get_all_settings()
@@ -815,7 +815,7 @@ def display_output_section(env):
         st.session_state.selected_section = selected_section
         
         # Add option to download everything as JSON
-        if st.button("Export All Settings"):
+        if st.button("Export All Settings", key="export_all_settings_output"):
             # Use the get_all_settings function to get structured settings
             from state import get_all_settings
             all_settings = get_all_settings()
