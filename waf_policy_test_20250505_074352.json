@@ -1,0 +1,96 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "applicationGatewayName": {
+        "type": "string",
+        "defaultValue": "agw-itz-test-jpe-001",
+        "metadata": {
+          "description": "Application Gateway name"
+        }
+      },
+      "vnetName": {
+        "type": "string",
+        "defaultValue": "vnet-itz-test-jpe-001",
+        "metadata": {
+          "description": "Virtual Network name"
+        }
+      },
+      "subnetName": {
+        "type": "string",
+        "defaultValue": "snet-itz-test-jpe-001",
+        "metadata": {
+          "description": "Subnet name"
+        }
+      },
+      "publicIpName": {
+        "type": "string",
+        "defaultValue": "pip-itz-anpi-test-jpe-001",
+        "metadata": {
+          "description": "Public IP name"
+        }
+      },
+      "wafPolicyName": {
+        "type": "string",
+        "defaultValue": "waf-agw-itz-test-jpe-001",
+        "metadata": {
+          "description": "WAF Policy name"
+        }
+      },
+      "environment": {
+        "type": "string",
+        "defaultValue": "Test",
+        "metadata": {
+          "description": "Environment name"
+        }
+      },
+      "location": {
+        "type": "string",
+        "defaultValue": "japaneast",
+        "metadata": {
+          "description": "Location for all resources"
+        }
+      }
+    },
+    "variables": {
+      "appGwPublicIPRef": "[resourceId('Microsoft.Network/publicIPAddresses', parameters('publicIpName'))]",
+      "appGwId": "[resourceId('Microsoft.Network/applicationGateways', parameters('applicationGatewayName'))]",
+      "subnetRef": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('subnetName'))]",
+      "wafPolicyId": "[resourceId('Microsoft.Network/ApplicationGatewayWebApplicationFirewallPolicies', parameters('wafPolicyName'))]"
+    },
+    "resources": [
+      {
+        "type": "Microsoft.Network/ApplicationGatewayWebApplicationFirewallPolicies",
+        "apiVersion": "2020-11-01",
+        "name": "[parameters('wafPolicyName')]",
+        "location": "[parameters('location')]",
+        "tags": {
+          "Project": "AnpiBot",
+          "Environment": "[parameters('environment')]"
+        },
+        "properties": {
+          "policySettings": {
+            "requestBodyCheck": true,
+            "maxRequestBodySizeInKb": 128,
+            "fileUploadLimitInMb": 100,
+            "state": "Enabled",
+            "mode": "Prevention"
+          },
+          "managedRules": {
+            "managedRuleSets": [
+              {
+                "ruleSetType": "OWASP",
+                "ruleSetVersion": "3.2"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "outputs": {
+      "wafPolicyId": {
+        "type": "string",
+        "value": "[variables('wafPolicyId')]"
+      }
+    }
+  }

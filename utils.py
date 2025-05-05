@@ -697,7 +697,7 @@ security:
   
 def get_arm_template_download_link(app_gw_name, vnet_name, subnet_name, pip_name, environment, location):
     """
-    Create a downloadable ARM template for Application Gateway
+    Create a downloadable ARM template for Application Gateway with WAF configuration
     
     Args:
         app_gw_name (str): Application Gateway name
@@ -752,7 +752,7 @@ def get_arm_template_download_link(app_gw_name, vnet_name, subnet_name, pip_name
             },
             "location": {
                 "type": "string",
-                "defaultValue": "[resourceGroup().location]",
+                "defaultValue": location,
                 "metadata": {
                     "description": "Location for all resources"
                 }
@@ -775,8 +775,8 @@ def get_arm_template_download_link(app_gw_name, vnet_name, subnet_name, pip_name
                 },
                 "properties": {
                     "sku": {
-                        "name": "Standard_v2",
-                        "tier": "Standard_v2"
+                        "name": "WAF_v2",
+                        "tier": "WAF_v2"
                     },
                     "autoscaleConfiguration": {
                         "minCapacity": 0,
@@ -863,10 +863,22 @@ def get_arm_template_download_link(app_gw_name, vnet_name, subnet_name, pip_name
                             }
                         }
                     ],
-                    "enableHttp2": False
+                    "enableHttp2": True,
+                    "webApplicationFirewallConfiguration": {
+                        "enabled": True,
+                        "firewallMode": "Prevention",
+                        "ruleSetType": "OWASP",
+                        "ruleSetVersion": "3.2"
+                    }
                 }
             }
-        ]
+        ],
+        "outputs": {
+            "applicationGatewayId": {
+                "type": "string",
+                "value": "[variables('appGwId')]"
+            }
+        }
     }
     
     # Convert template to JSON string with proper indentation
@@ -882,4 +894,39 @@ def get_arm_template_download_link(app_gw_name, vnet_name, subnet_name, pip_name
     # Create HTML download link
     href = f'<a href="data:application/json;base64,{template_b64}" download="{filename}" class="download-button">📥 Download ARM Template</a>'
     
-    return href
+    # Add deployment instructions
+    deployment_instructions = f"""
+    <div style="margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #ddd;">
+        <h4>Deployment Instructions</h4>
+        <p><strong>Deploy the WAF-enabled Application Gateway:</strong></p>
+        <pre style="background-color: #f1f1f1; padding: 10px; border-radius: 4px; overflow-x: auto;">
+az deployment group create \\
+  --resource-group $RG_NAME \\
+  --template-file {filename}
+        </pre>
+        
+        <p><strong>Note:</strong> This template includes:</p>
+        <ul>
+          <li>WAF_v2 SKU with prevention mode enabled</li>
+          <li>OWASP 3.2 rule set</li>
+          <li>HTTP/2 support enabled</li>
+          <li>Autoscaling configuration (0-10 capacity)</li>
+        </ul>
+        
+        <p><strong>After deployment:</strong> Configure the backend pool to point to your API Management service:</p>
+        <pre style="background-color: #f1f1f1; padding: 10px; border-radius: 4px; overflow-x: auto;">
+# Get the API Management hostname
+APIM_NAME="apim-itz-fjp"
+APIM_HOST=$(az apim show --name $APIM_NAME --resource-group $RG_NAME --query hostname -o tsv)
+
+# Update the backend pool to point to APIM backend
+az network application-gateway address-pool update \\
+  --name appGatewayBackendPool \\
+  --gateway-name {app_gw_name} \\
+  --resource-group $RG_NAME \\
+  --servers "$APIM_HOST"
+        </pre>
+    </div>
+    """
+    
+    return href + deployment_instructions

@@ -211,25 +211,29 @@ az appservice plan create \\
   --is-linux \\
   --tags "$SHARED_TAG"
 
-# Create Application Insights
-az monitor app-insights component create \\
-  --app {appinsights_name} \\
+# Create Application Insights using resource creation instead of app-insights extension
+# This avoids issues with the application-insights extension
+az resource create \\
   --resource-group $RG_NAME \\
+  --resource-type "microsoft.insights/components" \\
+  --name {appinsights_name} \\
   --location $LOCATION \\
-  --application-type web \\
-  --tags "$SHARED_TAG"
+  --properties '{{"Application_Type":"web"}}' \\
+
 
 # Get Application Insights Instrumentation Key
-APPINSIGHTS_KEY=$(az monitor app-insights component show \\
-  --app {appinsights_name} \\
+APPINSIGHTS_KEY=$(az resource show \\
   --resource-group $RG_NAME \\
-  --query instrumentationKey -o tsv)
+  --resource-type "microsoft.insights/components" \\
+  --name {appinsights_name} \\
+  --query "properties.InstrumentationKey" -o tsv)
 
 # Get Application Insights Connection String
-APPINSIGHTS_CONNECTION_STRING=$(az monitor app-insights component show \\
-  --app {appinsights_name} \\
+APPINSIGHTS_CONNECTION_STRING=$(az resource show \\
   --resource-group $RG_NAME \\
-  --query connectionString -o tsv)
+  --resource-type "microsoft.insights/components" \\
+  --name {appinsights_name} \\
+  --query "properties.ConnectionString" -o tsv)
 
 # Verification:
 # Azure Portal: 
@@ -238,9 +242,9 @@ APPINSIGHTS_CONNECTION_STRING=$(az monitor app-insights component show \\
 
 # CLI Verification:
 az appservice plan show --name {asp_name} --resource-group $RG_NAME -o table
-az monitor app-insights component show --app {appinsights_name} --resource-group $RG_NAME -o table
-echo $APPINSIGHTS_KEY
-echo $APPINSIGHTS_CONNECTION_STRING
+az resource show --resource-group $RG_NAME --resource-type "microsoft.insights/components" --name {appinsights_name} -o table
+echo "Instrumentation Key: $APPINSIGHTS_KEY"
+echo "Connection String: $APPINSIGHTS_CONNECTION_STRING"
 """
 
 def generate_data_ai_services(kv_name, cosmos_name, cosmos_db_name, openai_name, 
@@ -269,52 +273,25 @@ az cosmosdb sql database create \\
   --resource-group $RG_NAME \\
   --name {cosmos_db_name}
 
-# Create required containers based on application needs
-# Example: Create 'users' container
-az cosmosdb sql container create \\
-  --account-name {cosmos_name} \\
-  --resource-group $RG_NAME \\
-  --database-name {cosmos_db_name} \\
-  --name users \\
-  --partition-key-path "/partitionKey"
+# Create a temporary file with the correct partition key format and run it with CMD.EXE
+echo "Creating temporary script for Cosmos DB containers..."
+cat > /tmp/create_cosmos_containers.cmd << EOF
+@echo off
+echo Creating Cosmos DB containers...
+call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name users --partition-key-path "/partitionKey"
+call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name conversations --partition-key-path "/id"
+call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name events --partition-key-path "/partitionKey"
+call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name responses --partition-key-path "/eventId"
+call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name chatLogs --partition-key-path "/userId"
+call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name knowledge --partition-key-path "/partitionKey"
+echo Cosmos DB containers created successfully!
+EOF
 
-# Create other required containers
-az cosmosdb sql container create \\
-  --account-name {cosmos_name} \\
-  --resource-group $RG_NAME \\
-  --database-name {cosmos_db_name} \\
-  --name conversations \\
-  --partition-key-path "/id"
-
-az cosmosdb sql container create \\
-  --account-name {cosmos_name} \\
-  --resource-group $RG_NAME \\
-  --database-name {cosmos_db_name} \\
-  --name events \\
-  --partition-key-path "/partitionKey"
-
-az cosmosdb sql container create \\
-  --account-name {cosmos_name} \\
-  --resource-group $RG_NAME \\
-  --database-name {cosmos_db_name} \\
-  --name responses \\
-  --partition-key-path "/eventId"
-
-az cosmosdb sql container create \\
-  --account-name {cosmos_name} \\
-  --resource-group $RG_NAME \\
-  --database-name {cosmos_db_name} \\
-  --name chatLogs \\
-  --partition-key-path "/userId"
-
-az cosmosdb sql container create \\
-  --account-name {cosmos_name} \\
-  --resource-group $RG_NAME \\
-  --database-name {cosmos_db_name} \\
-  --name knowledge \\
-  --partition-key-path "/partitionKey"
+# Export RG_NAME as an environment variable for the Windows command
+cmd.exe /c "set RG_NAME=$RG_NAME && /tmp/create_cosmos_containers.cmd"
 
 # Get CosmosDB Connection String
+echo "Retrieving Cosmos DB connection string..."
 COSMOS_CONNECTION_STRING=$(az cosmosdb keys list \\
   --name {cosmos_name} \\
   --resource-group $RG_NAME \\
@@ -322,6 +299,7 @@ COSMOS_CONNECTION_STRING=$(az cosmosdb keys list \\
   --query connectionStrings[0].connectionString -o tsv)
 
 # Create OpenAI service
+echo "Creating Azure OpenAI service..."
 az cognitiveservices account create \\
   --name {openai_name} \\
   --resource-group $RG_NAME \\
@@ -331,6 +309,7 @@ az cognitiveservices account create \\
   --tags "$SHARED_TAG"
 
 # Get Azure OpenAI endpoint and key
+echo "Retrieving Azure OpenAI endpoint and keys..."
 AZURE_OPENAI_ENDPOINT=$(az cognitiveservices account show \\
   --name {openai_name} \\
   --resource-group $RG_NAME \\
@@ -341,7 +320,12 @@ AZURE_OPENAI_KEY=$(az cognitiveservices account keys list \\
   --resource-group $RG_NAME \\
   --query key1 -o tsv)
 
+echo "Azure OpenAI Endpoint: $AZURE_OPENAI_ENDPOINT"
+echo "Azure OpenAI Key: $AZURE_OPENAI_KEY"
+
 # Create OpenAI model deployments
+echo "Creating Azure OpenAI model deployments..."
+echo "1. Deploying main GPT model: $AZURE_OPENAI_MODEL (version $MODEL_VERSION)"
 az cognitiveservices account deployment create \\
   --name {openai_name} \\
   --resource-group $RG_NAME \\
@@ -352,6 +336,7 @@ az cognitiveservices account deployment create \\
   --sku-name Standard \\
   --sku-capacity 1
 
+echo "2. Deploying embedding model: $EMBEDDING_MODEL (version $EMBEDDING_MODEL_VERSION)"
 az cognitiveservices account deployment create \\
   --name {openai_name} \\
   --resource-group $RG_NAME \\
@@ -362,7 +347,57 @@ az cognitiveservices account deployment create \\
   --sku-name Standard \\
   --sku-capacity 1
 
+# List all model deployments and save details
+echo "Retrieving model deployment details..."
+az cognitiveservices account deployment list \\
+  --name {openai_name} \\
+  --resource-group $RG_NAME \\
+  --output table
+
+# Get specific model details and endpoints
+GPT_MODEL_STATUS=$(az cognitiveservices account deployment show \\
+  --name {openai_name} \\
+  --resource-group $RG_NAME \\
+  --deployment-name $AZURE_OPENAI_MODEL \\
+  --query properties.provisioningState -o tsv)
+
+EMBEDDING_MODEL_STATUS=$(az cognitiveservices account deployment show \\
+  --name {openai_name} \\
+  --resource-group $RG_NAME \\
+  --deployment-name $EMBEDDING_MODEL \\
+  --query properties.provisioningState -o tsv)
+
+echo "GPT Model ($AZURE_OPENAI_MODEL) Status: $GPT_MODEL_STATUS"
+echo "Embedding Model ($EMBEDDING_MODEL) Status: $EMBEDDING_MODEL_STATUS"
+
+# Save model information to a file for reference
+cat > ./openai_models_info.txt << EOF
+Azure OpenAI Service Information
+===============================
+Endpoint: $AZURE_OPENAI_ENDPOINT
+API Key: $AZURE_OPENAI_KEY
+
+GPT Model Information
+--------------------
+Model Name: $AZURE_OPENAI_MODEL
+Version: $MODEL_VERSION
+Deployment Name: $AZURE_OPENAI_MODEL
+Status: $GPT_MODEL_STATUS
+API URL: $AZURE_OPENAI_ENDPOINT/openai/deployments/$AZURE_OPENAI_MODEL/chat/completions?api-version=2024-02-15-preview
+
+Embedding Model Information
+-------------------------
+Model Name: $EMBEDDING_MODEL
+Version: $EMBEDDING_MODEL_VERSION
+Deployment Name: $EMBEDDING_MODEL
+Status: $EMBEDDING_MODEL_STATUS
+API URL: $AZURE_OPENAI_ENDPOINT/openai/deployments/$EMBEDDING_MODEL/embeddings?api-version=2023-05-15
+EOF
+
+echo "OpenAI model information saved to ./openai_models_info.txt"
+
 # Create Azure Search service
+echo "Creating Azure Search service..."
 az search service create \\
   --name {search_name} \\
   --resource-group $RG_NAME \\
@@ -378,7 +413,11 @@ AZURE_SEARCH_KEY=$(az search admin-key show \\
 
 AZURE_SEARCH_ENDPOINT="https://{search_name}.search.windows.net"
 
+echo "Azure Search Endpoint: $AZURE_SEARCH_ENDPOINT"
+echo "Azure Search Key: $AZURE_SEARCH_KEY"
+
 # Create a json file for index definition
+echo "Creating search index definition..."
 cat > /tmp/search-index.json << EOF
 {{
   "name": "{search_index_name}",
@@ -473,22 +512,48 @@ cat > /tmp/search-index.json << EOF
 EOF
 
 # Create the index using REST API
+echo "Creating search index..."
 az rest --method put \\
   --uri "${{AZURE_SEARCH_ENDPOINT}}/indexes/{search_index_name}?api-version=2023-07-01-Preview" \\
   --headers "Content-Type=application/json" "api-key=${{AZURE_SEARCH_KEY}}" \\
   --body @/tmp/search-index.json
 
+# Save search information to a file for reference
+cat > ./search_service_info.txt << EOF
+Azure Search Service Information
+===============================
+Endpoint: $AZURE_SEARCH_ENDPOINT
+API Key: $AZURE_SEARCH_KEY
+Index Name: {search_index_name}
+Semantic Configuration: {semantic_config_name}
+EOF
+
+echo "Azure Search information saved to ./search_service_info.txt"
+
 # Clean up
-rm /tmp/search-index.json
+echo "Cleaning up temporary files..."
+rm -f /tmp/search-index.json
+rm -f /tmp/create_cosmos_containers.cmd
+
+# Store secrets in Key Vault
+echo "Storing secrets in Key Vault..."
+az keyvault secret set --vault-name {kv_name} --name "OpenAI-Endpoint" --value "$AZURE_OPENAI_ENDPOINT"
+az keyvault secret set --vault-name {kv_name} --name "OpenAI-ApiKey" --value "$AZURE_OPENAI_KEY"
+az keyvault secret set --vault-name {kv_name} --name "Search-Endpoint" --value "$AZURE_SEARCH_ENDPOINT"
+az keyvault secret set --vault-name {kv_name} --name "Search-ApiKey" --value "$AZURE_SEARCH_KEY"
+az keyvault secret set --vault-name {kv_name} --name "CosmosDB-ConnectionString" --value "$COSMOS_CONNECTION_STRING"
+
+echo "All secrets stored in Key Vault: {kv_name}"
 
 # Verification:
-# Azure Portal:
-# - Go to Key Vaults and check {kv_name}
-# - Go to Azure Cosmos DB and check {cosmos_name}
-# - Go to Azure OpenAI and check {openai_name}
-# - Go to Azure AI Search and check {search_name}
+echo "===== Resource Verification ====="
+echo "Azure Portal:"
+echo "- Go to Key Vaults and check {kv_name}"
+echo "- Go to Azure Cosmos DB and check {cosmos_name}"
+echo "- Go to Azure OpenAI and check {openai_name}"
+echo "- Go to Azure AI Search and check {search_name}"
 
-# CLI Verification:
+echo "CLI Verification:"
 az keyvault show --name {kv_name} --resource-group $RG_NAME -o table
 az cosmosdb show --name {cosmos_name} --resource-group $RG_NAME -o table
 az cosmosdb sql database show --name {cosmos_db_name} --account-name {cosmos_name} --resource-group $RG_NAME -o table
