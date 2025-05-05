@@ -20,14 +20,15 @@ def main():
     sidebar_values = ui.create_sidebar()
     st.session_state.sidebar_values = sidebar_values
     
-    # Create main tabs - reordered to emphasize APIM first
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    # Create main tabs - updated to include CI/CD tab
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "Basic Resources", 
-        "API Management",  # Moved up in the order
+        "API Management",
         "Networking", 
         "App Service", 
         "Data & AI", 
         "Teams Integration",
+        "CI/CD Pipeline",
         "Deployment Checklist"
     ])
     
@@ -53,8 +54,11 @@ def main():
     
     with tab6:
         teams_integration = ui.create_teams_integration_tab()
-    
+        
     with tab7:
+        cicd = ui.create_cicd_tab()
+    
+    with tab8:
         ui.create_deployment_checklist_tab()
     
     # Create a button area with a more prominent design for generating commands

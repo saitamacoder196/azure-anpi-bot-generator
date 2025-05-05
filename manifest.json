@@ -1,0 +1,47 @@
+{
+    "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.11/MicrosoftTeams.schema.json",
+    "manifestVersion": "1.11",
+    "version": "1.0.0",
+    "id": "add0fcf1-3190-4a12-8ca0-00c47acb6178",
+    "packageName": "com.fjp.anpibottest",
+    "developer": {
+        "name": "FJP FST",
+        "mpnId": "",
+        "websiteUrl": "https://fsoft.com.vn/2119eeb1-7817-479b-b9e7-85f668299259",
+        "privacyUrl": "https://developer.microsoft.com/privacy",
+        "termsOfUseUrl": "https://learn.microsoft.com/en-us/legal/marketplace/certification-policies#114043-bots"
+    },
+    "icons": {
+        "color": "color.png",
+        "outline": "outline.png"
+    },
+    "name": {
+        "short": "Anpi Test",
+        "full": "AnpiBot - Safety Confirmation System (Test)"
+    },
+    "description": {
+        "short": "Safety confirmation bot for employees during disasters",
+        "full": "AnpiBot helps to confirm the safety status of employees during a disaster to facilitate necessary support measures."
+    },
+    "accentColor": "#FFFFFF",
+    "bots": [
+        {
+            "botId": "add0fcf1-3190-4a12-8ca0-00c47acb6178",
+            "scopes": [
+                "personal",
+                "team",
+                "groupchat"
+            ],
+            "supportsFiles": false,
+            "isNotificationOnly": false
+        }
+    ],
+    "permissions": [
+        "identity",
+        "messageTeamMembers"
+    ],
+    "validDomains": [
+        "*.azurewebsites.net",
+        "token.botframework.com"
+    ]
+}

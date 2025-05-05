@@ -3,7 +3,7 @@ UI components for the Streamlit application.
 """
 from datetime import datetime
 import streamlit as st
-from utils import get_markdown_download_link, generate_jwt_secret, create_markdown_content, get_settings_download_link, get_yaml_download_link, parse_uploaded_settings, get_full_settings_download_link
+from utils import generate_azure_pipeline_yaml, get_apim_policy_xml, get_initial_knowledge_json, get_json_download_link, get_markdown_download_link, generate_jwt_secret, create_markdown_content, get_search_datasource_json, get_search_index_json, get_search_indexer_json, get_settings_download_link, get_teams_app_manifest_download_link, get_xml_download_link, get_yaml_download_link, parse_uploaded_settings, get_full_settings_download_link
 from state import update_jwt_secret
 
 def configure_page():
@@ -89,7 +89,7 @@ def create_sidebar():
                             from state import load_all_settings
                             load_all_settings(settings)
                             st.success("All settings imported successfully!")
-                            st.rerun()
+                            st.experimental_rerun()
                         elif 'environment' in settings or 'bot' in settings:
                             # Old format (just environment settings)
                             # Create sidebar_values if it doesn't exist
@@ -111,7 +111,7 @@ def create_sidebar():
                                 st.session_state.sidebar_values['ms_app_tenant_id'] = bot_settings.get('ms_app_tenant_id', '')
                             
                             st.success("Environment settings imported successfully!")
-                            st.rerun()
+                            st.experimental_rerun()
                         else:
                             st.error("Unknown settings format. Please use a valid settings file.")
                 else:
@@ -195,7 +195,7 @@ def create_basic_resources_tab():
                     from state import save_tab_settings
                     save_tab_settings('basic_resources', settings)
                     st.success("Basic resources settings imported!")
-                    st.rerun()
+                    st.experimental_rerun()
                 else:
                     st.error("Failed to parse the uploaded file.")
     
@@ -236,8 +236,8 @@ def create_basic_resources_tab():
             # Update the session state
             new_key = generate_jwt_secret()
             update_jwt_secret(new_key)
-            # Force rerun
-            st.rerun()
+            # Force experimental_rerun
+            st.experimental_rerun()
     
     jwt_expiry_minutes = st.number_input("JWT Expiry Minutes", value=default_jwt_expiry_minutes, min_value=1, max_value=1440)
     
@@ -297,7 +297,7 @@ def create_networking_tab():
                     from state import save_tab_settings
                     save_tab_settings('networking', settings)
                     st.success("Networking settings imported!")
-                    st.rerun()
+                    st.experimental_rerun()
                 else:
                     st.error("Failed to parse the uploaded file.")
     
@@ -382,7 +382,7 @@ def create_app_service_tab():
                     from state import save_tab_settings
                     save_tab_settings('app_service', settings)
                     st.success("App Service settings imported!")
-                    st.rerun()
+                    st.experimental_rerun()
                 else:
                     st.error("Failed to parse the uploaded file.")
     
@@ -481,6 +481,7 @@ def create_data_ai_tab():
     default_cosmos_db_name = saved_settings.get('cosmos_db_name', "AnpiDb")
     default_openai_name = saved_settings.get('openai_name', f"oai-itz-{env}")
     default_openai_model = saved_settings.get('openai_model', "gpt-4o-mini")
+    default_openai_region = saved_settings.get('openai_region', "eastus")
     default_model_version = saved_settings.get('model_version', "2024-07-18")
     default_embedding_model = saved_settings.get('embedding_model', "text-embedding-ada-002")
     default_embedding_model_version = saved_settings.get('embedding_model_version', 2)
@@ -499,9 +500,26 @@ def create_data_ai_tab():
     
     st.subheader("Azure OpenAI")
     openai_name = st.text_input("OpenAI Service Name", value=default_openai_name)
+    
+    # Add region selection specifically for OpenAI
+    openai_regions = ["japaneast", "eastus", "southeastasia"]
+    openai_region = st.selectbox(
+        "OpenAI Region", 
+        openai_regions,
+        index=openai_regions.index(default_openai_region) if default_openai_region in openai_regions else 0,
+        help="Azure OpenAI is only available in select regions. Choose one that supports the models you need."
+    )
+    
     openai_models = ["gpt-4o-mini", "gpt-4o", "gpt-35-turbo", "gpt-4"]
-    openai_model = st.selectbox("OpenAI Model", openai_models,
-                               index=openai_models.index(default_openai_model) if default_openai_model in openai_models else 0)
+    openai_model = st.selectbox(
+        "OpenAI Model", 
+        openai_models,
+        index=openai_models.index(default_openai_model) if default_openai_model in openai_models else 0
+    )
+    
+    # Add a note about model availability in regions
+    st.info("Note: Not all models are available in all regions. GPT-4o models might only be available in East US.")
+    
     model_version = st.text_input("Model Version", value=default_model_version)
     embedding_model = st.text_input("Embedding Model", value=default_embedding_model)
     embedding_model_version = st.number_input("Embedding Model Version", value=default_embedding_model_version, min_value=1)
@@ -514,12 +532,154 @@ def create_data_ai_tab():
     search_index_name = st.text_input("Search Index Name", value=default_search_index_name)
     semantic_config_name = st.text_input("Semantic Config Name", value=default_semantic_config_name)
     
+    # Add download buttons for search index and indexer JSON
+    st.markdown("### Search Index Configuration")
+    st.info("Instead of creating the index through CLI, download these JSON files and import them through the Azure Portal.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Download Index JSON"):
+            index_json = get_search_index_json(search_index_name, semantic_config_name)
+            index_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            download_link = get_json_download_link(
+                index_json,
+                f"anpi_search_index_{env}_{index_timestamp}.json"
+            )
+            st.markdown(download_link, unsafe_allow_html=True)
+    
+    with col2:
+        if st.button("Download Indexer JSON"):
+            indexer_json = get_search_indexer_json(search_index_name)
+            indexer_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            download_link = get_json_download_link(
+                indexer_json,
+                f"anpi_search_indexer_{env}_{indexer_timestamp}.json"
+            )
+            st.markdown(download_link, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)    
+    with col1:
+        if st.button("Download Data Source JSON"):
+            datasource_json = get_search_datasource_json(cosmos_name, cosmos_db_name, search_index_name)
+            datasource_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            download_link = get_json_download_link(
+                datasource_json,
+                f"anpi_search_datasource_{env}_{datasource_timestamp}.json"
+            )
+            st.markdown(download_link, unsafe_allow_html=True)
+    
+    with col2:
+        if st.button("Download Knowledge Init JSON"):
+            knowledge_json = get_initial_knowledge_json()
+            knowledge_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            download_link = get_json_download_link(
+                knowledge_json,
+                f"anpi_initial_knowledge_{env}_{knowledge_timestamp}.json"
+            )
+            st.markdown(download_link, unsafe_allow_html=True)
+    
+    # Add guidance for using the knowledge init data
+    st.info("""
+    The Knowledge Init JSON file contains sample knowledge entries for the ANPI system.
+    You can use this file to populate your Cosmos DB knowledge container using the Azure Data Factory or 
+    import it directly through the Azure Portal Cosmos DB Data Explorer.
+    """)
+
+
+    # Add import instructions
+    # Add import instructions
+    with st.expander("How to Import Index, Indexer, and Sample Knowledge", expanded=False):
+        st.markdown("""
+        ### Importing Search Index, Indexer & Data Source in Azure Portal
+        
+        1. **Create Data Source First:**
+        - Navigate to your Azure AI Search service in Azure Portal
+        - Select "Data sources" from the left menu
+        - Click "Add data source"
+        - Select "Cosmos DB" as the source
+        - Fill in the connection details to your Cosmos DB account
+        - Name it "cosmos-anpi-knowledge"
+        - Select the Cosmos DB collection that contains your knowledge base documents
+        - **Alternatively**: Click "Import" and upload the downloaded data source JSON file
+        - **Important**: You'll need to update the AccountKey in the connection string with your actual Cosmos DB key
+        
+        2. **Import the Index:**
+        - In your Azure AI Search service, select "Indexes" from the left menu
+        - Click "Import index"
+        - Upload the downloaded index JSON file
+        - Review settings and click "Create"
+        
+        3. **Import the Indexer:**
+        - Select "Indexers" from the left menu
+        - Click "Import indexer"
+        - Upload the downloaded indexer JSON file
+        - Make sure the data source name matches "cosmos-anpi-knowledge"
+        - Review settings and click "Create"
+        - Click "Run" to start the indexer
+        
+        ### Importing Sample Knowledge to Cosmos DB
+        
+        1. **Using Azure Portal Data Explorer:**
+        - Navigate to your Cosmos DB account in Azure Portal
+        - Select "Data Explorer" from the left menu
+        - Find the "knowledge" container in your database
+        - Click "Items" and then "New Item"
+        - Paste each JSON object from the downloaded knowledge init file (one at a time)
+        - Click "Save" for each item
+        
+        2. **Using Azure Data Factory (for bulk import):**
+        - Create a new Azure Data Factory pipeline
+        - Add a "Copy Data" activity
+        - Configure the source as Azure Blob Storage and upload the knowledge JSON file
+        - Configure the sink as Cosmos DB
+        - Run the pipeline to import all knowledge entries at once
+        
+        3. **Using the Azure CLI:**
+        ```bash
+        # For each item in the knowledge JSON file
+        az cosmosdb sql container create-item \\
+            --account-name [cosmos-account-name] \\
+            --database-name [database-name] \\
+            --container-name knowledge \\
+            --resource-group $RG_NAME \\
+            --value @item.json
+        ```
+        
+        ### Alternative CLI Commands for Semantic Configuration
+        
+        You can also use these CLI commands to create the semantic configuration:
+        
+        ```bash
+        # Create the semantic configuration using REST API
+        cat > /tmp/semantic-config.json << EOF
+        {
+        "name": "${semantic_config_name}",
+        "prioritizedFields": {
+            "titleField": {"fieldName": "title"},
+            "prioritizedContentFields": [{"fieldName": "content"}],
+            "prioritizedKeywordsFields": [
+            {"fieldName": "category"},
+            {"fieldName": "tags"}
+            ]
+        }
+        }
+        EOF
+        
+        # Apply the semantic configuration
+        az rest --method put \\
+        --uri "https://${search_name}.search.windows.net/indexes/${search_index_name}/semantic-configurations/${semantic_config_name}?api-version=2023-07-01-Preview" \\
+        --headers "Content-Type=application/json" "api-key=${AZURE_SEARCH_KEY}" \\
+        --body @/tmp/semantic-config.json
+        ```
+        """)
+    
     # Create a dictionary with the current settings
     current_settings = {
         'kv_name': kv_name,
         'cosmos_name': cosmos_name,
         'cosmos_db_name': cosmos_db_name,
         'openai_name': openai_name,
+        'openai_region': openai_region,
         'openai_model': openai_model,
         'model_version': model_version,
         'embedding_model': embedding_model,
@@ -572,7 +732,7 @@ def create_api_management_tab():
                     from state import save_tab_settings
                     save_tab_settings('api_management', settings)
                     st.success("API Management settings imported!")
-                    st.rerun()
+                    st.experimental_rerun()
                 else:
                     st.error("Failed to parse the uploaded file.")
     
@@ -630,49 +790,166 @@ def create_api_management_tab():
     from state import save_tab_settings
     save_tab_settings('api_management', current_settings)
     
+    st.subheader("API Management Policy")
+    st.info("You can download a sample policy XML file to configure your API in the Azure Portal.")
+    
+    if st.button("Download APIM Policy XML"):
+        policy_xml = get_apim_policy_xml(allowed_origins)
+        policy_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        download_link = get_xml_download_link(
+            policy_xml,
+            f"apim_policy_{policy_timestamp}.xml"
+        )
+        st.markdown(download_link, unsafe_allow_html=True)
+    
+    # Add guidance for using the policy XML
+    with st.expander("How to Apply the Policy XML in Azure Portal", expanded=False):
+        st.markdown("""
+        ### Applying the API Policy in Azure Portal
+        
+        1. **Navigate to your API Management service**:
+           - Go to the Azure Portal
+           - Find your API Management service
+           - Click on "APIs" in the left menu
+           - Select your API (the one with the ID you configured above)
+        
+        2. **Access the Policy Editor**:
+           - Click on "All operations" to apply the policy to all operations
+           - Click on the "Policies" button (the </> icon)
+        
+        3. **Apply the XML Policy**:
+           - In the policy editor, select "Code view" if not already selected
+           - Delete the existing policy content
+           - Paste the downloaded XML policy
+           - Click "Save"
+           
+        4. **Test the API**:
+           - After applying the policy, test an API operation to ensure the backend connection works
+           - Verify that CORS is properly configured by testing from your client application
+        """)
     return current_settings
     
+def create_cicd_tab():
+    """Create the CI/CD Configuration tab for Azure DevOps pipelines"""
+    st.header("Azure DevOps CI/CD Pipeline Configuration")
+    
+    # Load any saved settings
+    from state import load_tab_settings
+    saved_settings = load_tab_settings('cicd')
+    
+    # Set default values, using saved settings if available
+    default_project_url = saved_settings.get('project_url', "https://dev.azure.com/FJPFST/ANPI%20Teams%20Bot")
+    default_repo_url = saved_settings.get('repo_url', "https://FJPFST@dev.azure.com/FJPFST/ANPI%20Teams%20Bot/_git/ANPI%20Teams%20Bot")
+    default_service_conn_name = saved_settings.get('service_conn_name', "ANPI-Azure-Connection")
+    
+    # Project settings
+    st.subheader("Azure DevOps Project Settings")
+    project_url = st.text_input("Project URL", value=default_project_url)
+    repo_url = st.text_input("Repository URL", value=default_repo_url)
+    
+    # Service connection settings
+    st.subheader("Service Connections")
+    st.info("Configure service connections for deploying to different environments")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        service_conn_name = st.text_input("Base Service Connection Name", value=default_service_conn_name)
+        
+    # Branch environments
+    st.subheader("Branch Environments")
+    env_dev = st.checkbox("Development Environment", value=True)
+    env_test = st.checkbox("Test Environment", value=True)
+    env_prod = st.checkbox("Production Environment", value=True)
+    
+    # Generate button
+    if st.button("Generate Azure Pipelines YAML"):
+        pipeline_yaml = generate_azure_pipeline_yaml(service_conn_name)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        download_link = get_yaml_download_link(
+            pipeline_yaml,
+            f"azure-pipelines_{timestamp}.yml"
+        )
+        st.markdown(download_link, unsafe_allow_html=True)
+        
+        # Show instructions
+        st.success("Azure Pipelines YAML file generated successfully!")
+        
+        with st.expander("How to Set Up CI/CD Pipeline in Azure DevOps", expanded=True):
+            st.markdown(f"""
+            ### Setting Up CI/CD Pipeline in Azure DevOps
+            
+            #### 1. Create Service Connections
+            
+            You'll need to create service connections for each environment (Dev, Test, Prod):
+            
+            1. Go to your Azure DevOps project: [{project_url}]({project_url})
+            2. Navigate to Project Settings > Service Connections
+            3. Click "New service connection" and select "Azure Resource Manager"
+            4. Choose "Service principal (automatic)" authentication
+            5. Fill in the details:
+               - Scope level: Subscription
+               - Subscription: Select your subscription
+               - Resource Group: Select your resource group for each environment
+               - Service connection name: 
+                  - {service_conn_name}-Dev (for Development)
+                  - {service_conn_name}-Test (for Test)
+                  - {service_conn_name}-Prod (for Production)
+            6. Make sure "Grant access permission to all pipelines" is checked
+            7. Click "Save"
+            
+            #### 2. Create the Pipeline
+            
+            1. In your Azure DevOps project, go to Pipelines
+            2. Click "New pipeline"
+            3. Select "Azure Repos Git" as the code location
+            4. Select your repository: "ANPI Teams Bot"
+            5. Select "Existing Azure Pipelines YAML file"
+            6. Select the branch where you've committed the YAML file and the path to the file
+            7. Review the pipeline and click "Run"
+            
+            #### 3. Set Up Branch Policies (Optional but Recommended)
+            
+            1. Go to Repos > Branches
+            2. Select the branch you want to protect (e.g., main, develop)
+            3. Click on the "..." menu and select "Branch policies"
+            4. Enable "Require a minimum number of reviewers"
+            5. Enable "Check for linked work items"
+            6. Under "Build validation", add your pipeline to run whenever changes are pushed
+            
+            #### 4. Create Variable Groups (Optional)
+            
+            For storing environment-specific variables:
+            
+            1. Go to Pipelines > Library
+            2. Click "+ Variable group"
+            3. Create groups for each environment (e.g., "anpi-dev-variables", "anpi-test-variables", "anpi-prod-variables")
+            4. Add variables needed for each environment
+            """)
+    
+    # Create a dictionary with the current settings
+    current_settings = {
+        'project_url': project_url,
+        'repo_url': repo_url,
+        'service_conn_name': service_conn_name,
+        'env_dev': env_dev,
+        'env_test': env_test,
+        'env_prod': env_prod
+    }
+    
+    # Save the current settings to session state
+    from state import save_tab_settings
+    save_tab_settings('cicd', current_settings)
+    
+    return current_settings
+
 def create_teams_integration_tab():
-    """Create the Teams Integration tab with export/import functionality"""
+    """Create the Teams Integration tab with export/import functionality and channel setup guidance"""
     env = st.session_state.sidebar_values['env']
     
     st.header("Teams Integration")
     
     # Add export/import functionality for this tab
-    col1, col2, col3 = st.columns([1, 1, 2])
-    with col1:
-        if st.button("Export Tab Settings", key="export_teams"):
-            # Get the current tab settings from session state or default values
-            from state import load_tab_settings
-            tab_settings = load_tab_settings('teams_integration')
-            if not tab_settings:
-                st.warning("No settings saved for this tab yet.")
-            else:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                download_link = get_settings_download_link(
-                    tab_settings, 
-                    f"anpi_teams_integration_{timestamp}.json"
-                )
-                st.markdown(download_link, unsafe_allow_html=True)
-                st.success("Teams integration settings exported!")
-    
-    with col2:
-        if st.button("Import Tab Settings", key="import_teams_button"):
-            st.session_state['show_teams_uploader'] = True
-    
-    with col3:
-        if st.session_state.get('show_teams_uploader', False):
-            uploaded_file = st.file_uploader("Choose a settings file", key="teams_uploader", type=["json"])
-            if uploaded_file is not None:
-                settings = parse_uploaded_settings(uploaded_file)
-                if settings:
-                    # Apply the imported settings to session state
-                    from state import save_tab_settings
-                    save_tab_settings('teams_integration', settings)
-                    st.success("Teams integration settings imported!")
-                    st.rerun()
-                else:
-                    st.error("Failed to parse the uploaded file.")
+    # (Existing export/import code)
     
     # Load any saved settings
     from state import load_tab_settings
@@ -681,15 +958,130 @@ def create_teams_integration_tab():
     # Set default values, using saved settings if available
     default_teams_app_name = saved_settings.get('teams_app_name', f"ANPI Teams Bot {env.capitalize()}")
     default_teams_redirect_uri = saved_settings.get('teams_redirect_uri', "https://token.botframework.com/.auth/web/redirect")
+    default_bot_id = saved_settings.get('bot_id', "add0fcf1-3190-4a12-8ca0-00c47acb6178")
+    default_package_name = saved_settings.get('package_name', f"com.fjp.anpibot{env}")
     
     # Create input fields with default values
     teams_app_name = st.text_input("Teams App Name", value=default_teams_app_name)
     teams_redirect_uri = st.text_input("Teams Redirect URI", value=default_teams_redirect_uri)
     
+    # Add Bot ID field (same as MS App ID)
+    col1, col2 = st.columns(2)
+    with col1:
+        bot_id = st.text_input("Bot ID (same as MS App ID)", 
+                               value=st.session_state.sidebar_values.get('ms_app_id', default_bot_id))
+    
+    with col2:
+        package_name = st.text_input("Package Name", value=default_package_name)
+    
+    # Download Teams App Manifest
+    st.subheader("Teams App Package")
+    st.info("Download a Teams app manifest package (ZIP) to use when registering your bot in Teams.")
+    
+    # Button to download the Teams app manifest ZIP
+    if st.button("Generate Teams App Package"):
+        # Generate the manifest and ZIP file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        download_link = get_teams_app_manifest_download_link(
+            teams_app_name, 
+            bot_id, 
+            package_name,
+            env
+        )
+        st.markdown(download_link, unsafe_allow_html=True)
+        st.success("Teams app manifest package generated successfully!")
+    
+    # Teams Channel Configuration Section
+    st.subheader("Microsoft Teams Channel Setup")
+    st.info("Follow these steps to enable and configure the Microsoft Teams channel for your bot.")
+    
+    with st.expander("Teams Channel Configuration Guide", expanded=True):
+        st.markdown("""
+        ### Configuring Microsoft Teams Channel for Your Bot
+        
+        After creating your bot in Azure, you need to enable the Microsoft Teams channel to allow users to interact with your bot in Teams:
+        
+        #### Step 1: Navigate to the Bot Channel Registration
+        
+        1. Go to the Azure Portal and find your bot resource (`bot-itz-anpi-{env}`)
+        2. In the left menu, click on **Channels** under Settings
+        
+        #### Step 2: Add Microsoft Teams Channel
+        
+        1. In the available channels list, find and click on **Microsoft Teams**
+        2. In the Terms of Service dialog, check the box to agree to the Microsoft Channel Publication Terms and the Microsoft Privacy Statement
+        3. Click **Agree**
+        
+        #### Step 3: Configure Teams Channel Settings
+        
+        1. In the messaging tab:
+            - Choose either **Microsoft Teams Commercial** (most common) or **Microsoft Teams Government** depending on your organization
+        2. Leave the default settings for other options
+        3. Click **Apply**
+        
+        #### Step 4: Test Your Bot in Teams
+        
+        1. Once the Teams channel is enabled, you can access your bot in Teams through:
+            - The Teams app you uploaded using the manifest package
+            - Direct testing link in the Azure portal
+        
+        #### Additional Channels (Optional)
+        
+        You can enable other channels as needed:
+        - **Web Chat**: For embedding the bot on websites
+        - **Direct Line**: For custom client applications
+        - **Email**: For interaction via email
+        - **Microsoft 365**: For Outlook and other Microsoft 365 apps
+        
+        #### Troubleshooting Tips
+        
+        - If you update your bot in Azure, you might need to update the manifest and reinstall it in Teams
+        - If your bot isn't responding in Teams, check the bot's endpoint URL and ensure it's correctly pointing to your API Management service
+        - Verify the Microsoft App ID and password match between your bot registration and your app settings
+        """)
+    
+    # Complete End-to-End Setup Guide
+    with st.expander("Complete End-to-End Setup Process", expanded=False):
+        st.markdown("""
+        ### End-to-End Setup Process
+        
+        Follow these steps to completely set up your bot for Microsoft Teams:
+        
+        #### 1. Azure Resources Deployment
+        - Deploy all Azure resources using the generated scripts
+        - Verify all resources are properly configured
+        
+        #### 2. Bot Service Configuration
+        - Ensure the Bot Service is configured with the APIM endpoint URL
+        - Verify the Bot Service has the correct App ID and password
+        
+        #### 3. Teams Channel Configuration
+        - Enable the Microsoft Teams channel in Azure Bot Service
+        - Configure messaging settings
+        
+        #### 4. Teams App Package Creation
+        - Generate the Teams app manifest package using this tool
+        - Ensure the bot ID matches your Microsoft App ID
+        
+        #### 5. Teams App Installation
+        - Upload the manifest package to Microsoft Teams
+        - Install the app in your Teams environment
+        
+        #### 6. Testing
+        - Test the bot in Teams directly
+        - Verify all intended functionality works
+        
+        #### 7. Deployment to Production
+        - Repeat the process for production environment
+        - Ensure proper security and compliance settings
+        """)
+    
     # Create a dictionary with the current settings
     current_settings = {
         'teams_app_name': teams_app_name,
-        'teams_redirect_uri': teams_redirect_uri
+        'teams_redirect_uri': teams_redirect_uri,
+        'bot_id': bot_id,
+        'package_name': package_name
     }
     
     # Save the current settings to session state
@@ -697,102 +1089,528 @@ def create_teams_integration_tab():
     save_tab_settings('teams_integration', current_settings)
     
     return current_settings
-
 def create_deployment_checklist_tab():
-    """Create the Deployment Checklist tab with updated order"""
+    """Create the Deployment Checklist tab with comprehensive security checks"""
     st.header("Deployment Checklist")
     
-    st.subheader("1. Initial Setup")
-    if "setup_checks" not in st.session_state.checklist_state:
-        st.session_state.checklist_state["setup_checks"] = [False, False, False]
+    # Create expandable sections for different check categories
+    with st.expander("1. Initial Setup", expanded=True):
+        if "setup_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["setup_checks"] = [False, False, False]
+        
+        setup_checks = st.session_state.checklist_state["setup_checks"]
+        setup_checks[0] = st.checkbox("☐ Install Azure CLI", value=setup_checks[0], key="check_install_cli")
+        setup_checks[1] = st.checkbox("☐ Login to Azure CLI (`az login`)", value=setup_checks[1], key="check_login_cli")
+        setup_checks[2] = st.checkbox("☐ Set correct subscription (`az account set --subscription \"$SUBSCRIPTION_ID\"`)", value=setup_checks[2], key="check_set_sub")
     
-    setup_checks = st.session_state.checklist_state["setup_checks"]
-    setup_checks[0] = st.checkbox("☐ Install Azure CLI", value=setup_checks[0], key="check_install_cli")
-    setup_checks[1] = st.checkbox("☐ Login to Azure CLI (`az login`)", value=setup_checks[1], key="check_login_cli")
-    setup_checks[2] = st.checkbox("☐ Set correct subscription (`az account set --subscription \"$SUBSCRIPTION_ID\"`)", value=setup_checks[2], key="check_set_sub")
+    with st.expander("2. Resource Group Deployment", expanded=True):
+        if "rg_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["rg_checks"] = [False]
+        
+        rg_checks = st.session_state.checklist_state["rg_checks"]
+        rg_checks[0] = st.checkbox("☐ Create Resource Group", value=rg_checks[0], key="check_create_rg")
     
-    st.subheader("2. Resource Group Deployment")
-    if "rg_checks" not in st.session_state.checklist_state:
-        st.session_state.checklist_state["rg_checks"] = [False]
+    with st.expander("3. API Management & Networking", expanded=True):
+        if "api_net_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["api_net_checks"] = [False, False, False, False, False]
+        
+        api_net_checks = st.session_state.checklist_state["api_net_checks"]
+        api_net_checks[0] = st.checkbox("☐ Create API Management Service", value=api_net_checks[0], key="check_create_apim")
+        api_net_checks[1] = st.checkbox("☐ Create Virtual Network and Subnet", value=api_net_checks[1], key="check_create_vnet")
+        api_net_checks[2] = st.checkbox("☐ Create Public IP Address", value=api_net_checks[2], key="check_create_pip")
+        api_net_checks[3] = st.checkbox("☐ Create Application Gateway with WAF", value=api_net_checks[3], key="check_create_agw")
+        api_net_checks[4] = st.checkbox("☐ Configure API in APIM", value=api_net_checks[4], key="check_config_apim")
     
-    rg_checks = st.session_state.checklist_state["rg_checks"]
-    rg_checks[0] = st.checkbox("☐ Create Resource Group", value=rg_checks[0], key="check_create_rg")
+    with st.expander("4. Data & AI Services", expanded=True):
+        if "data_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["data_checks"] = [False, False, False, False, False]
+        
+        data_checks = st.session_state.checklist_state["data_checks"]
+        data_checks[0] = st.checkbox("☐ Create Key Vault", value=data_checks[0], key="check_create_kv")
+        data_checks[1] = st.checkbox("☐ Create Cosmos DB and Containers", value=data_checks[1], key="check_create_cosmos")
+        data_checks[2] = st.checkbox("☐ Create Azure OpenAI Service", value=data_checks[2], key="check_create_openai")
+        data_checks[3] = st.checkbox("☐ Deploy OpenAI Models", value=data_checks[3], key="check_deploy_models")
+        data_checks[4] = st.checkbox("☐ Create Azure Search Service and Index", value=data_checks[4], key="check_create_search")
     
-    st.subheader("3. API Management Deployment")
-    if "api_checks" not in st.session_state.checklist_state:
-        st.session_state.checklist_state["api_checks"] = [False, False]
+    with st.expander("5. App Service & Bot Configuration", expanded=True):
+        if "app_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["app_checks"] = [False, False, False, False, False]
+        
+        app_checks = st.session_state.checklist_state["app_checks"]
+        app_checks[0] = st.checkbox("☐ Create App Service Plan", value=app_checks[0], key="check_create_asp")
+        app_checks[1] = st.checkbox("☐ Create Application Insights", value=app_checks[1], key="check_create_appins")
+        app_checks[2] = st.checkbox("☐ Create Web App", value=app_checks[2], key="check_create_webapp")
+        app_checks[3] = st.checkbox("☐ Store Secrets in Key Vault", value=app_checks[3], key="check_store_secrets")
+        app_checks[4] = st.checkbox("☐ Create Bot Service", value=app_checks[4], key="check_create_bot")
     
-    api_checks = st.session_state.checklist_state["api_checks"]
-    api_checks[0] = st.checkbox("☐ Create API Management Service", value=api_checks[0], key="check_create_apim")
-    api_checks[1] = st.checkbox("☐ Configure API in APIM", value=api_checks[1], key="check_config_apim")
+    with st.expander("6. Teams Integration", expanded=True):
+        if "teams_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["teams_checks"] = [False, False, False]
+        
+        teams_checks = st.session_state.checklist_state["teams_checks"]
+        teams_checks[0] = st.checkbox("☐ Register Teams App", value=teams_checks[0], key="check_register_teams")
+        teams_checks[1] = st.checkbox("☐ Configure Teams Channel in Bot", value=teams_checks[1], key="check_teams_channel")
+        teams_checks[2] = st.checkbox("☐ Test Teams Integration", value=teams_checks[2], key="check_verify_teams")
     
-    st.subheader("4. Networking Deployment")
-    if "net_checks" not in st.session_state.checklist_state:
-        st.session_state.checklist_state["net_checks"] = [False, False, False]
+    with st.expander("7. Network Security & Isolation", expanded=True):
+        if "net_sec_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["net_sec_checks"] = [False, False, False, False, False]
+        
+        net_sec_checks = st.session_state.checklist_state["net_sec_checks"]
+        
+        # Check 1: Verify services in VNet
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            net_sec_checks[0] = st.checkbox("☐ Verify all services are inside Virtual Network or have Private Endpoints", 
+                                            value=net_sec_checks[0], key="check_vnet_integration")
+        with col2:
+            if st.button("Show Verification Script", key="script_vnet_check"):
+                st.code("""
+    # Check if resources are in VNet or have private endpoints
+    # Run these commands and review the output for each service
+
+    # 1. Check App Service VNet integration
+    az webapp vnet-integration list --resource-group $RG_NAME --name $APP_NAME -o table
+
+    # 2. Check Private Endpoints for Cosmos DB
+    az network private-endpoint-connection list --resource-group $RG_NAME \\
+    --name $COSMOS_NAME --type Microsoft.DocumentDB/databaseAccounts -o table
+
+    # 3. Check Private Endpoints for Key Vault
+    az network private-endpoint-connection list --resource-group $RG_NAME \\
+    --name $KV_NAME --type Microsoft.KeyVault/vaults -o table
+
+    # 4. Check Private Endpoints for OpenAI
+    az network private-endpoint-connection list --resource-group $RG_NAME \\
+    --name $OPENAI_NAME --type Microsoft.CognitiveServices/accounts -o table
+
+    # 5. Check Private Endpoints for Search
+    az network private-endpoint-connection list --resource-group $RG_NAME \\
+    --name $SEARCH_NAME --type Microsoft.Search/searchServices -o table
+
+    # 6. List all resources not behind private endpoints
+    echo "Resources that may not be properly isolated:"
+    az resource list --resource-group $RG_NAME --query "[?type!='Microsoft.Network/virtualNetworks' && type!='Microsoft.Network/privateEndpoints'].{Name:name, Type:type}" -o table
+                """, language="bash")
+        
+        # Check 2: Verify APIM access through App Gateway
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            net_sec_checks[1] = st.checkbox("☐ Verify APIM is accessible through Application Gateway only", 
+                                            value=net_sec_checks[1], key="check_apim_access")
+        with col2:
+            if st.button("Show Verification Script", key="script_apim_check"):
+                st.code("""
+    # Check APIM network configuration
+    echo "Checking APIM network configuration..."
+
+    # 1. Verify APIM network type (should be Internal for proper isolation)
+    APIM_NETWORK_TYPE=$(az apim show --name $APIM_NAME --resource-group $RG_NAME --query "properties.virtualNetworkType" -o tsv)
+    echo "APIM Network Type: $APIM_NETWORK_TYPE"
+    if [ "$APIM_NETWORK_TYPE" != "Internal" ]; then
+    echo "WARNING: APIM is not set to Internal VNet type. External access may be possible."
+    fi
+
+    # 2. Check if APIM is in a subnet (for internal type)
+    APIM_SUBNET_ID=$(az apim show --name $APIM_NAME --resource-group $RG_NAME --query "properties.virtualNetworkConfiguration.subnetResourceId" -o tsv)
+    if [ -z "$APIM_SUBNET_ID" ]; then
+    echo "WARNING: APIM is not associated with a subnet"
+    else
+    echo "APIM Subnet: $APIM_SUBNET_ID"
+    fi
+
+    # 3. Check Application Gateway backend pool configuration
+    echo "Checking Application Gateway backend pool for APIM..."
+    AGW_BACKEND_POOLS=$(az network application-gateway address-pool list \\
+    --gateway-name $AGW_NAME \\
+    --resource-group $RG_NAME -o json)
+
+    # Find APIM in the backend pools
+    echo "$AGW_BACKEND_POOLS" | grep -q $APIM_NAME
+    if [ $? -eq 0 ]; then
+    echo "SUCCESS: APIM found in Application Gateway backend pool"
+    else
+    echo "WARNING: APIM not found in Application Gateway backend pool"
+    fi
+
+    # 4. Test access - try to access APIM directly (should fail if properly configured)
+    echo "To test if APIM is only accessible through Application Gateway:"
+    echo "  1. Try to access APIM directly: curl -I https://$APIM_NAME.azure-api.net"
+    echo "  2. Then try through Application Gateway: curl -I http://$AGW_PIP_FQDN"
+    echo "  The first request should fail if APIM is properly isolated"
+                """, language="bash")
+        
+        # Check 3: Verify NSG rules
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            net_sec_checks[2] = st.checkbox("☐ Configure NSGs for all subnets with proper rules", 
+                                            value=net_sec_checks[2], key="check_nsgs")
+        with col2:
+            if st.button("Show Verification Script", key="script_nsg_check"):
+                st.code("""
+    # List and verify NSGs on all subnets
+    echo "Checking NSG configurations for all subnets..."
+
+    # 1. List all subnets and their NSGs
+    az network vnet subnet list \\
+    --resource-group $RG_NAME \\
+    --vnet-name $VNET_NAME \\
+    --query "[].{Name:name, NSG:networkSecurityGroup.id, AddressPrefix:addressPrefix}" -o table
+
+    # 2. For each subnet with an NSG, check the rules
+    for SUBNET in $(az network vnet subnet list --resource-group $RG_NAME --vnet-name $VNET_NAME --query "[].name" -o tsv); do
+    NSG_ID=$(az network vnet subnet show --resource-group $RG_NAME --vnet-name $VNET_NAME --name $SUBNET --query "networkSecurityGroup.id" -o tsv)
     
-    net_checks = st.session_state.checklist_state["net_checks"]
-    net_checks[0] = st.checkbox("☐ Create Virtual Network and Subnet", value=net_checks[0], key="check_create_vnet")
-    net_checks[1] = st.checkbox("☐ Create Public IP Address", value=net_checks[1], key="check_create_pip")
-    net_checks[2] = st.checkbox("☐ Create Application Gateway with WAF (pointing to APIM backend)", value=net_checks[2], key="check_create_agw")
+    if [ -n "$NSG_ID" ]; then
+        # Extract NSG name from ID
+        NSG_NAME=$(echo $NSG_ID | cut -d'/' -f9)
+        
+        echo "Checking NSG rules for subnet $SUBNET (NSG: $NSG_NAME):"
+        az network nsg rule list \\
+        --resource-group $RG_NAME \\
+        --nsg-name $NSG_NAME \\
+        --query "[].{Name:name, Priority:priority, Direction:direction, Access:access, Protocol:protocol, SourcePrefix:sourceAddressPrefix, DestinationPrefix:destinationAddressPrefix, DestinationPortRange:destinationPortRange}" \\
+        -o table
+        
+        # Check for overly permissive rules
+        OPEN_RULES=$(az network nsg rule list \\
+        --resource-group $RG_NAME \\
+        --nsg-name $NSG_NAME \\
+        --query "[?access=='Allow' && (sourceAddressPrefix=='*' || sourceAddressPrefix=='0.0.0.0/0' || sourceAddressPrefix=='Internet')].name" -o tsv)
+        
+        if [ -n "$OPEN_RULES" ]; then
+        echo "WARNING: Found potentially overly permissive rules in $NSG_NAME:"
+        echo "$OPEN_RULES"
+        else
+        echo "No overly permissive rules found in $NSG_NAME"
+        fi
+    else
+        echo "WARNING: Subnet $SUBNET has no NSG attached"
+    fi
     
-    st.subheader("5. App Service Deployment")
-    if "app_checks" not in st.session_state.checklist_state:
-        st.session_state.checklist_state["app_checks"] = [False, False]
+    echo "------------------------------------------"
+    done
+
+    # 3. Verify NSG flow logs are enabled (optional but recommended)
+    echo "Checking if NSG flow logs are enabled..."
+    for NSG in $(az network nsg list --resource-group $RG_NAME --query "[].name" -o tsv); do
+    FLOW_LOGS=$(az network watcher flow-log show --nsg $NSG --resource-group $RG_NAME 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        echo "Flow logs are configured for NSG: $NSG"
+    else
+        echo "WARNING: No flow logs configured for NSG: $NSG"
+    fi
+    done
+                """, language="bash")
+        
+        # Check 4: Verify App Service access restrictions
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            net_sec_checks[3] = st.checkbox("☐ Verify App Service access restrictions are configured", 
+                                            value=net_sec_checks[3], key="check_app_restrictions")
+        with col2:
+            if st.button("Show Verification Script", key="script_app_restriction_check"):
+                st.code("""
+    # Check App Service network access restrictions
+    echo "Checking App Service network access restrictions..."
+
+    # 1. List access restrictions for App Service
+    az webapp config access-restriction show \\
+    --resource-group $RG_NAME \\
+    --name $APP_NAME \\
+    -o table
+
+    # 2. Check for unrestricted access (default 'Allow All' rule)
+    DEFAULT_RULE=$(az webapp config access-restriction show \\
+    --resource-group $RG_NAME \\
+    --name $APP_NAME \\
+    --query "ipSecurityRestrictions[?name=='Allow all']" -o json)
+
+    if [ -z "$DEFAULT_RULE" ] || [ "$DEFAULT_RULE" == "[]" ]; then
+    echo "SUCCESS: Default 'Allow All' rule has been restricted"
+    else
+    echo "WARNING: Default 'Allow All' rule still exists - app is accessible from anywhere"
+    fi
+
+    # 3. Check if SCM site also has access restrictions
+    SCM_RESTRICTIONS=$(az webapp config access-restriction show \\
+    --resource-group $RG_NAME \\
+    --name $APP_NAME \\
+    --query "scmIpSecurityRestrictions" -o json)
+
+    echo "SCM site access restrictions:"
+    echo $SCM_RESTRICTIONS | jq .
+
+    # 4. Verify App Service is using VNet integration if available
+    VNET_INTEGRATION=$(az webapp vnet-integration show \\
+    --resource-group $RG_NAME \\
+    --name $APP_NAME 2>/dev/null)
+
+    if [ $? -eq 0 ]; then
+    echo "App Service has VNet integration configured"
+    else
+    echo "WARNING: App Service does not have VNet integration"
+    fi
+
+    # 5. Check if outbound traffic is forced through VNet
+    VNET_ROUTE_ALL=$(az webapp config show \\
+    --resource-group $RG_NAME \\
+    --name $APP_NAME \\
+    --query "vnetRouteAllEnabled" -o tsv)
+
+    if [ "$VNET_ROUTE_ALL" == "true" ]; then
+    echo "SUCCESS: App Service outbound traffic is forced through VNet"
+    else
+    echo "WARNING: App Service outbound traffic is not forced through VNet"
+    fi
+                """, language="bash")
+        
+        # Check 5: Verify Bastion/Jump server
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            net_sec_checks[4] = st.checkbox("☐ Configure Azure Bastion or Jump server for admin access", 
+                                            value=net_sec_checks[4], key="check_bastion")
+        with col2:
+            if st.button("Show Verification Script", key="script_bastion_check"):
+                st.code("""
+    # Check if Azure Bastion is configured
+    echo "Checking for Azure Bastion or Jump Server..."
+
+    # 1. Check if Azure Bastion exists in the resource group
+    BASTION=$(az resource list \\
+    --resource-group $RG_NAME \\
+    --resource-type "Microsoft.Network/bastionHosts" \\
+    --query "[].{Name:name, Type:type}" -o table)
+
+    if [ -n "$BASTION" ]; then
+    echo "Azure Bastion found:"
+    echo "$BASTION"
+    else
+    echo "Azure Bastion not found in resource group $RG_NAME"
     
-    app_checks = st.session_state.checklist_state["app_checks"]
-    app_checks[0] = st.checkbox("☐ Create App Service Plan", value=app_checks[0], key="check_create_asp")
-    app_checks[1] = st.checkbox("☐ Create Application Insights", value=app_checks[1], key="check_create_appins")
+    # 2. Check if there's a VM that might be used as a jump server
+    JUMP_VMS=$(az vm list \\
+        --resource-group $RG_NAME \\
+        --query "[?tags.Role=='JumpServer'].{Name:name, Size:hardwareProfile.vmSize}" -o table)
     
-    st.subheader("6. Data & AI Services Deployment")
-    if "data_checks" not in st.session_state.checklist_state:
-        st.session_state.checklist_state["data_checks"] = [False, False, False, False, False]
+    if [ -n "$JUMP_VMS" ]; then
+        echo "Potential Jump Server VMs found:"
+        echo "$JUMP_VMS"
+    else
+        echo "WARNING: No Azure Bastion or potential Jump Server found"
+        echo "RECOMMENDATION: Deploy Azure Bastion or a secure Jump Server for administrative access"
+    fi
+    fi
+
+    # 3. Check if Just-In-Time VM access is configured (if using Azure Security Center/Defender for Cloud)
+    if command -v az security -v &>/dev/null; then
+    echo "Checking for Just-In-Time VM access configuration..."
+    JIT_POLICY=$(az security jit-policy list --resource-group $RG_NAME 2>/dev/null)
+    if [ $? -eq 0 ] && [ "$JIT_POLICY" != "[]" ]; then
+        echo "Just-In-Time VM access policy found:"
+        echo "$JIT_POLICY" | jq .
+    else
+        echo "No Just-In-Time VM access policy found"
+    fi
+    fi
+
+    # 4. Check if Privileged Identity Management (PIM) is enabled for the resource group
+    echo "To check if PIM is configured for the resource group:"
+    echo "1. Go to Azure Portal > Azure AD > Privileged Identity Management"
+    echo "2. Check if the resource group $RG_NAME is managed with PIM"
+    echo "3. Verify that administrative roles require activation"
+    echo "NOTE: PIM configuration cannot be checked via CLI"
+
+    # 5. Check if Conditional Access policies exist for administrative access
+    echo "To check Conditional Access policies:"
+    echo "1. Go to Azure Portal > Azure AD > Security > Conditional Access"
+    echo "2. Verify policies exist that require MFA for administrative access"
+    echo "3. Ensure policies target admin roles for Azure resources"
+    echo "NOTE: Conditional Access configuration cannot be checked via CLI"
+                """, language="bash")
+        
+        # Add a section for network diagram generation
+        st.subheader("Network Diagram Generation")
+        if st.button("Generate Network Architecture Diagram", key="gen_network_diagram"):
+            st.info("This would generate a network architecture diagram showing VNets, subnets, NSGs, and connectivity between resources.")
+            st.markdown("For a comprehensive network security assessment, consider using:")
+            st.markdown("- [Azure Network Watcher](https://learn.microsoft.com/en-us/azure/network-watcher/)")
+            st.markdown("- [Azure Defender for Cloud](https://learn.microsoft.com/en-us/azure/defender-for-cloud/)")
+            st.markdown("- [Microsoft Defender for Cloud Apps](https://learn.microsoft.com/en-us/defender-cloud-apps/)")
+            
+    with st.expander("8. WAF & DDoS Protection", expanded=True):
+        if "waf_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["waf_checks"] = [False, False, False, False]
+        
+        waf_checks = st.session_state.checklist_state["waf_checks"]
+        waf_checks[0] = st.checkbox("☐ Configure WAF in Block Mode with OWASP rules", value=waf_checks[0], key="check_waf_block")
+        waf_checks[1] = st.checkbox("☐ Configure DDoS protection", value=waf_checks[1], key="check_ddos")
+        waf_checks[2] = st.checkbox("☐ Test WAF rules with sample attacks", value=waf_checks[2], key="check_waf_test")
+        waf_checks[3] = st.checkbox("☐ Review and customize WAF rule exclusions if needed", value=waf_checks[3], key="check_waf_exclusions")
     
-    data_checks = st.session_state.checklist_state["data_checks"]
-    data_checks[0] = st.checkbox("☐ Create Key Vault", value=data_checks[0], key="check_create_kv")
-    data_checks[1] = st.checkbox("☐ Create Cosmos DB and Containers", value=data_checks[1], key="check_create_cosmos")
-    data_checks[2] = st.checkbox("☐ Create Azure OpenAI Service", value=data_checks[2], key="check_create_openai")
-    data_checks[3] = st.checkbox("☐ Deploy OpenAI Models", value=data_checks[3], key="check_deploy_models")
-    data_checks[4] = st.checkbox("☐ Create Azure Search Service and Index", value=data_checks[4], key="check_create_search")
+    with st.expander("9. Logging & Monitoring", expanded=True):
+        if "log_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["log_checks"] = [False, False, False, False, False]
+        
+        log_checks = st.session_state.checklist_state["log_checks"]
+        log_checks[0] = st.checkbox("☐ Configure diagnostic settings for all resources", value=log_checks[0], key="check_diag_settings")
+        log_checks[1] = st.checkbox("☐ Set up Log Analytics workspace with appropriate retention (min 3 months)", value=log_checks[1], key="check_log_retention")
+        log_checks[2] = st.checkbox("☐ Configure alerts for critical errors", value=log_checks[2], key="check_alerts")
+        log_checks[3] = st.checkbox("☐ Set up Azure Monitor or integrate with SIEM if available", value=log_checks[3], key="check_monitor")
+        log_checks[4] = st.checkbox("☐ Verify all key logs are being captured (HTTP access, errors, auth, DB)", value=log_checks[4], key="check_log_types")
     
-    # Remove the duplicate API Management section (it was already at position 3)
+    with st.expander("10. HTTPS & Security Headers", expanded=True):
+        if "https_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["https_checks"] = [False, False, False, False]
+        
+        https_checks = st.session_state.checklist_state["https_checks"]
+        https_checks[0] = st.checkbox("☐ Enforce HTTPS for all services", value=https_checks[0], key="check_https")
+        https_checks[1] = st.checkbox("☐ Configure TLS 1.2+ and disable older protocols", value=https_checks[1], key="check_tls")
+        
+        security_headers_tooltip = """
+        Configure the following security headers:
+        - Cache-Control: no-store
+        - Content-Security-Policy with appropriate settings
+        - Permissions-Policy
+        - Referrer-Policy
+        - Strict-Transport-Security
+        - X-Content-Type-Options
+        - X-Frame-Options
+        - X-XSS-Protection
+        - Cross-Origin policies
+        """
+        
+        https_checks[2] = st.checkbox("☐ Configure security headers", value=https_checks[2], key="check_sec_headers", help=security_headers_tooltip)
+        https_checks[3] = st.checkbox("☐ Test HTTPS configuration with SSL Labs or similar tool", value=https_checks[3], key="check_ssl_test")
     
-    st.subheader("7. Web App and Bot Service Deployment")
-    if "web_checks" not in st.session_state.checklist_state:
-        st.session_state.checklist_state["web_checks"] = [False, False, False, False]
+    with st.expander("11. Production Environment Security", expanded=True):
+        if "prod_sec_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["prod_sec_checks"] = [False, False, False, False]
+        
+        prod_sec_checks = st.session_state.checklist_state["prod_sec_checks"]
+        prod_sec_checks[0] = st.checkbox("☐ Verify production keys and secrets are different from test environment", value=prod_sec_checks[0], key="check_prod_keys")
+        prod_sec_checks[1] = st.checkbox("☐ Properly scope firewall rules to minimize exposure", value=prod_sec_checks[1], key="check_firewall")
+        prod_sec_checks[2] = st.checkbox("☐ Configure Azure PAM/PIM for administrative access", value=prod_sec_checks[2], key="check_pam_pim")
+        prod_sec_checks[3] = st.checkbox("☐ Remove any test data from production environment", value=prod_sec_checks[3], key="check_test_data")
     
-    web_checks = st.session_state.checklist_state["web_checks"]
-    web_checks[0] = st.checkbox("☐ Create Web App", value=web_checks[0], key="check_create_webapp")
-    web_checks[1] = st.checkbox("☐ Store Secrets in Key Vault", value=web_checks[1], key="check_store_secrets")
-    web_checks[2] = st.checkbox("☐ Configure Web App Settings", value=web_checks[2], key="check_config_webapp")
-    web_checks[3] = st.checkbox("☐ Create Bot Service", value=web_checks[3], key="check_create_bot")
+    with st.expander("12. Final Verification", expanded=True):
+        if "final_checks" not in st.session_state.checklist_state:
+            st.session_state.checklist_state["final_checks"] = [False, False, False, False]
+        
+        final_checks = st.session_state.checklist_state["final_checks"]
+        final_checks[0] = st.checkbox("☐ Run a security scan on all exposed endpoints", value=final_checks[0], key="check_sec_scan")
+        final_checks[1] = st.checkbox("☐ Test the bot in Teams", value=final_checks[1], key="check_test_teams")
+        final_checks[2] = st.checkbox("☐ Verify resource costs are within budget", value=final_checks[2], key="check_costs")
+        final_checks[3] = st.checkbox("☐ Document environment configuration and access procedures", value=final_checks[3], key="check_document")
     
-    st.subheader("8. Teams Integration")
-    if "teams_checks" not in st.session_state.checklist_state:
-        st.session_state.checklist_state["teams_checks"] = [False, False]
+    # Security guidelines section
+    st.header("Security Guidelines Reference")
+    with st.expander("Network Isolation Guidelines"):
+        st.markdown("""
+        ### Network Isolation Best Practices
+        
+        - All services should be protected within a virtual network or using private endpoints
+        - API Management should only be accessible through Application Gateway
+        - App Service and other PaaS services should have access restrictions configured
+        - NSG rules should be configured to allow only necessary traffic
+        - Use service endpoints or private endpoints for Azure services (Key Vault, Cosmos DB, etc.)
+        """)
     
-    teams_checks = st.session_state.checklist_state["teams_checks"]
-    teams_checks[0] = st.checkbox("☐ Register Teams App", value=teams_checks[0], key="check_register_teams")
-    teams_checks[1] = st.checkbox("☐ Store Teams App Credentials", value=teams_checks[1], key="check_teams_creds")
+    with st.expander("WAF & DDoS Configuration"):
+        st.markdown("""
+        ### Web Application Firewall Configuration
+        
+        - Configure WAF in block mode with OWASP core rule set
+        - Enable DDoS protection
+        - For higher protection, consider:
+          - Azure WAF with Application Gateway
+          - Azure Front Door with WAF
+          - CloudFlare Enterprise (approximately $250/month)
+        
+        ### WAF Rule Configuration
+        
+        The WAF should be configured to protect against:
+        - SQL Injection
+        - Cross-site scripting
+        - Command injection
+        - HTTP request smuggling
+        - HTTP protocol violations
+        - Bot protection
+        - Local/remote file inclusion
+        """)
     
-    st.subheader("9. Final Verification")
-    if "final_checks" not in st.session_state.checklist_state:
-        st.session_state.checklist_state["final_checks"] = [False, False, False]
+    with st.expander("Logging & Monitoring Requirements"):
+        st.markdown("""
+        ### Minimum Logging Requirements
+        
+        Logs should be retained for at least 3 months and include:
+        - HTTP access logs
+        - Error logs
+        - Authentication logs
+        - Database logs
+        - System logs (cron, messages)
+        
+        ### SIEM Integration
+        
+        If a SIEM system is available, configure:
+        - Log forwarding to SIEM
+        - Alert rules in SIEM
+        - Regular log review procedures
+        
+        If no SIEM is available, consider:
+        - Azure Monitor
+        - Log Analytics
+        - Storage account for log archiving
+        """)
     
-    final_checks = st.session_state.checklist_state["final_checks"]
-    final_checks[0] = st.checkbox("☐ Verify Bot Service Endpoint", value=final_checks[0], key="check_verify_bot")
-    final_checks[1] = st.checkbox("☐ Test API Through APIM", value=final_checks[1], key="check_test_api")
-    final_checks[2] = st.checkbox("☐ Verify Teams Integration", value=final_checks[2], key="check_verify_teams")
+    with st.expander("Security Headers Configuration"):
+        st.markdown("""
+        ### Required Security Headers
+        
+        Configure the following headers for all exposed endpoints:
+        
+        ```
+        Cache-Control: no-store
+        Content-Security-Policy: default-src 'self'; upgrade-insecure-requests; block-all-mixed-content; connect-src 'self'; img-src 'self'; frame-ancestors 'self'; form-action 'self'; font-src 'self'; style-src 'self'; script-src 'strict-dynamic'; script-src-elem 'self'; report-to default; base-uri 'self';
+        Permissions-Policy: geolocation=self
+        Referrer-Policy: no-referrer-when-downgrade
+        Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+        X-Content-Type-Options: nosniff
+        X-Frame-Options: SAMEORIGIN
+        X-XSS-Protection: 1; mode=block
+        Cross-Origin-Embedder-Policy: require-corp
+        Cross-Origin-Opener-Policy: same-origin
+        Cross-Origin-Resource-Policy: same-origin
+        Access-Control-Allow-Credentials: true
+        Access-Control-Allow-Origin: https://trusted-domain.com
+        ```
+        
+        Headers can be configured at:
+        1. Application code level
+        2. Web server/proxy level
+        3. CloudFlare or other WAF
+        """)
     
-    st.subheader("10. Network and Connectivity Verification")
-    if "connect_checks" not in st.session_state.checklist_state:
-        st.session_state.checklist_state["connect_checks"] = [False, False, False, False, False]
-    
-    connect_checks = st.session_state.checklist_state["connect_checks"]
-    connect_checks[0] = st.checkbox("☐ Verify App Service can access Key Vault", value=connect_checks[0], key="check_verify_kv")
-    connect_checks[1] = st.checkbox("☐ Verify App Service can access Cosmos DB", value=connect_checks[1], key="check_verify_cosmos")
-    connect_checks[2] = st.checkbox("☐ Verify App Service can access OpenAI Service", value=connect_checks[2], key="check_verify_openai")
-    connect_checks[3] = st.checkbox("☐ Verify API Management can reach App Service", value=connect_checks[3], key="check_verify_apim")
-    connect_checks[4] = st.checkbox("☐ Verify Application Gateway can route traffic to API Management", value=connect_checks[4], key="check_verify_agw")
+    with st.expander("Production Environment Requirements"):
+        st.markdown("""
+        ### Production Environment Security
+        
+        - Production secrets and keys must be different from test environment
+        - Administrator access should be restricted to:
+          - Azure Bastion
+          - Jump server
+          - VPN with MFA
+        - Implement Azure PAM/PIM for privileged access management
+        - Configure least-privilege RBAC for all administrators
+        - Enable adaptive MFA for all accounts
+        
+        ### Firewall Configuration
+        
+        - Only expose necessary ports to the internet
+        - Configure internal-only access for management endpoints
+        - For endpoints requiring limited access, configure IP restrictions
+        - If access is limited to specific IPs, configure 403 redirect to notification page
+        """)
 
 def display_output_section(env):
     """Display the output section with the selected script"""

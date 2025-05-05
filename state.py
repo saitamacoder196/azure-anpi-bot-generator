@@ -56,8 +56,11 @@ def initialize_session_state():
             'app_service': {},
             'data_ai': {},
             'api_management': {},
-            'teams_integration': {}
+            'teams_integration': {},
+            'cicd': {}  # Add this line
         }
+
+
         
     # Initialize state for file upload visibility
     for tab in ['basic', 'networking', 'app_service', 'data_ai', 'api_mgmt', 'teams']:

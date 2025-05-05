@@ -250,7 +250,7 @@ echo "Connection String: $APPINSIGHTS_CONNECTION_STRING"
 def generate_data_ai_services(kv_name, cosmos_name, cosmos_db_name, openai_name, 
                            openai_model, model_version, embedding_model, 
                            embedding_model_version, search_name, search_sku, 
-                           search_index_name, semantic_config_name):
+                           search_index_name, semantic_config_name, openai_region):
     """Generate data and AI services script section"""
     return f"""
 # Create Key Vault
@@ -273,22 +273,13 @@ az cosmosdb sql database create \\
   --resource-group $RG_NAME \\
   --name {cosmos_db_name}
 
-# Create a temporary file with the correct partition key format and run it with CMD.EXE
-echo "Creating temporary script for Cosmos DB containers..."
-cat > /tmp/create_cosmos_containers.cmd << EOF
-@echo off
-echo Creating Cosmos DB containers...
-call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name users --partition-key-path "/partitionKey"
-call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name conversations --partition-key-path "/id"
-call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name events --partition-key-path "/partitionKey"
-call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name responses --partition-key-path "/eventId"
-call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name chatLogs --partition-key-path "/userId"
-call az cosmosdb sql container create --account-name {cosmos_name} --resource-group %RG_NAME% --database-name {cosmos_db_name} --name knowledge --partition-key-path "/partitionKey"
-echo Cosmos DB containers created successfully!
-EOF
-
-# Export RG_NAME as an environment variable for the Windows command
-cmd.exe /c "set RG_NAME=$RG_NAME && /tmp/create_cosmos_containers.cmd"
+# Create Cosmos DB containers
+az cosmosdb sql container create --account-name {cosmos_name} --resource-group $RG_NAME --database-name {cosmos_db_name} --name users --partition-key-path "/partitionKey"
+az cosmosdb sql container create --account-name {cosmos_name} --resource-group $RG_NAME --database-name {cosmos_db_name} --name conversations --partition-key-path "/id"
+az cosmosdb sql container create --account-name {cosmos_name} --resource-group $RG_NAME --database-name {cosmos_db_name} --name events --partition-key-path "/partitionKey"
+az cosmosdb sql container create --account-name {cosmos_name} --resource-group $RG_NAME --database-name {cosmos_db_name} --name responses --partition-key-path "/eventId"
+az cosmosdb sql container create --account-name {cosmos_name} --resource-group $RG_NAME --database-name {cosmos_db_name} --name chatLogs --partition-key-path "/userId"
+az cosmosdb sql container create --account-name {cosmos_name} --resource-group $RG_NAME --database-name {cosmos_db_name} --name knowledge --partition-key-path "/partitionKey"
 
 # Get CosmosDB Connection String
 echo "Retrieving Cosmos DB connection string..."
@@ -303,7 +294,7 @@ echo "Creating Azure OpenAI service..."
 az cognitiveservices account create \\
   --name {openai_name} \\
   --resource-group $RG_NAME \\
-  --location $LOCATION \\
+  --location {openai_region} \\
   --kind OpenAI \\
   --sku S0 \\
   --tags "$SHARED_TAG"
@@ -416,107 +407,13 @@ AZURE_SEARCH_ENDPOINT="https://{search_name}.search.windows.net"
 echo "Azure Search Endpoint: $AZURE_SEARCH_ENDPOINT"
 echo "Azure Search Key: $AZURE_SEARCH_KEY"
 
-# Create a json file for index definition
-echo "Creating search index definition..."
-cat > /tmp/search-index.json << EOF
-{{
-  "name": "{search_index_name}",
-  "fields": [
-    {{
-      "name": "id",
-      "type": "Edm.String",
-      "key": true,
-      "searchable": true,
-      "filterable": true,
-      "sortable": true
-    }},
-    {{
-      "name": "title",
-      "type": "Edm.String",
-      "searchable": true,
-      "filterable": true,
-      "sortable": true
-    }},
-    {{
-      "name": "content",
-      "type": "Edm.String",
-      "searchable": true,
-      "filterable": false,
-      "sortable": false
-    }},
-    {{
-      "name": "category",
-      "type": "Edm.String",
-      "searchable": true,
-      "filterable": true,
-      "sortable": true
-    }},
-    {{
-      "name": "language",
-      "type": "Edm.String",
-      "searchable": true,
-      "filterable": true,
-      "sortable": true
-    }},
-    {{
-      "name": "tags",
-      "type": "Collection(Edm.String)",
-      "searchable": true,
-      "filterable": true,
-      "sortable": false
-    }},
-    {{
-      "name": "embedding",
-      "type": "Collection(Edm.Single)",
-      "searchable": true,
-      "filterable": false,
-      "sortable": false,
-      "dimensions": 1536,
-      "vectorSearchConfiguration": "vector-config"
-    }}
-  ],
-  "vectorSearch": {{
-    "algorithmConfigurations": [
-      {{
-        "name": "vector-config",
-        "kind": "hnsw"
-      }}
-    ]
-  }},
-  "semantic": {{
-    "configurations": [
-      {{
-        "name": "{semantic_config_name}",
-        "prioritizedFields": {{
-          "titleField": {{
-            "fieldName": "title"
-          }},
-          "contentFields": [
-            {{
-              "fieldName": "content"
-            }}
-          ],
-          "keywordsFields": [
-            {{
-              "fieldName": "category"
-            }},
-            {{
-              "fieldName": "tags"
-            }}
-          ]
-        }}
-      }}
-    ]
-  }}
-}}
-EOF
-
-# Create the index using REST API
-echo "Creating search index..."
-az rest --method put \\
-  --uri "${{AZURE_SEARCH_ENDPOINT}}/indexes/{search_index_name}?api-version=2023-07-01-Preview" \\
-  --headers "Content-Type=application/json" "api-key=${{AZURE_SEARCH_KEY}}" \\
-  --body @/tmp/search-index.json
+echo "NOTE: The search index and indexer will not be created automatically."
+echo "Please download the JSON files from the application and import them through the Azure Portal."
+echo "Follow these steps:"
+echo "1. Create a Cosmos DB data source in your search service"
+echo "2. Import the downloaded index JSON file"
+echo "3. Import the downloaded indexer JSON file"
+echo "4. Run the indexer to populate the index"
 
 # Save search information to a file for reference
 cat > ./search_service_info.txt << EOF
@@ -530,18 +427,33 @@ EOF
 
 echo "Azure Search information saved to ./search_service_info.txt"
 
-# Clean up
-echo "Cleaning up temporary files..."
-rm -f /tmp/search-index.json
-rm -f /tmp/create_cosmos_containers.cmd
+# Store secrets in Key Vault
+# Set up Key Vault permissions - add this BEFORE storing secrets
+echo "Setting up Key Vault permissions..."
+EMAIL="${{USER_EMAIL:-$(az account show --query user.name -o tsv)}}"
+echo "Using email: $EMAIL for Key Vault permissions"
+
+OBJECT_ID=$(az ad user show --id $EMAIL --query id -o tsv)
+echo "User Object ID: $OBJECT_ID"
+
+# Get Key Vault resource ID
+KV_ID=$(az keyvault show --name {kv_name} --resource-group $RG_NAME --query id -o tsv)
+echo "Key Vault ID: $KV_ID"
+
+# Assign Key Vault Secrets Officer role
+echo "Assigning Key Vault Secrets Officer role..."
+az role assignment create \
+  --role "Key Vault Secrets Officer" \
+  --assignee-object-id "$OBJECT_ID" \
+  --scope "$KV_ID"
 
 # Store secrets in Key Vault
 echo "Storing secrets in Key Vault..."
-az keyvault secret set --vault-name {kv_name} --name "OpenAI-Endpoint" --value "$AZURE_OPENAI_ENDPOINT"
-az keyvault secret set --vault-name {kv_name} --name "OpenAI-ApiKey" --value "$AZURE_OPENAI_KEY"
-az keyvault secret set --vault-name {kv_name} --name "Search-Endpoint" --value "$AZURE_SEARCH_ENDPOINT"
-az keyvault secret set --vault-name {kv_name} --name "Search-ApiKey" --value "$AZURE_SEARCH_KEY"
-az keyvault secret set --vault-name {kv_name} --name "CosmosDB-ConnectionString" --value "$COSMOS_CONNECTION_STRING"
+az keyvault secret set --vault-name {kv_name} --name "anpi-OpenAIEndpoint" --value "$AZURE_OPENAI_ENDPOINT"
+az keyvault secret set --vault-name {kv_name} --name "anpi-OpenAIApiKey" --value "$AZURE_OPENAI_KEY"
+az keyvault secret set --vault-name {kv_name} --name "anpi-SearchEndpoint" --value "$AZURE_SEARCH_ENDPOINT"
+az keyvault secret set --vault-name {kv_name} --name "anpi-SearchApiKey" --value "$AZURE_SEARCH_KEY"
+az keyvault secret set --vault-name {kv_name} --name "anpi-CosmosDbConnectionString" --value "$COSMOS_CONNECTION_STRING"
 
 echo "All secrets stored in Key Vault: {kv_name}"
 
@@ -561,7 +473,6 @@ az cosmosdb sql container list --database-name {cosmos_db_name} --account-name {
 az cognitiveservices account show --name {openai_name} --resource-group $RG_NAME -o table
 az cognitiveservices account deployment list --name {openai_name} --resource-group $RG_NAME -o table
 az search service show --name {search_name} --resource-group $RG_NAME -o table
-az search index show --name {search_index_name} --service-name {search_name} --resource-group $RG_NAME -o table
 """
 
 def generate_api_management(apim_name, apim_sku, apim_publisher_email, 
@@ -633,15 +544,53 @@ APP_PRINCIPAL_ID=$(az webapp identity show \\
 
 # Create backend for App Service
 APP_SERVICE_URL="https://{app_name}.azurewebsites.net"
-az apim backend create \\
-  --resource-group $RG_NAME \\
-  --service-name "{apim_name}" \\
-  --backend-id "anpi-app-service" \\
-  --url "$APP_SERVICE_URL" \\
-  --protocol http \\
-  --description "ANPI Bot App Service"
+
+# Try to create backend using the newer az apim backend command
+echo "Creating API backend for App Service..."
+echo "Attempting to create backend using 'az apim backend create'..."
+
+if az apim backend create --help &>/dev/null; then
+  # If the command exists, use it
+  az apim backend create \\
+    --resource-group $RG_NAME \\
+    --service-name "{apim_name}" \\
+    --backend-id "anpi-app-service" \\
+    --url "$APP_SERVICE_URL" \\
+    --protocol http \\
+    --description "ANPI Bot App Service"
+else
+  # If the command doesn't exist, use the REST API directly
+  echo "Command 'az apim backend create' not found. Using REST API instead..."
+  
+  # Get the management endpoint URL for the API Management service
+  APIM_ID=$(az apim show \\
+    --name {apim_name} \\
+    --resource-group $RG_NAME \\
+    --query id -o tsv)
+  
+  # Create JSON for backend definition
+  echo "Creating backend JSON..."
+  cat > /tmp/backend.json << EOF
+  {{
+    "properties": {{
+      "url": "$APP_SERVICE_URL",
+      "protocol": "http",
+      "description": "ANPI Bot App Service"
+    }}
+  }}
+EOF
+  
+  # Create the backend using REST API
+  echo "Creating backend using REST API..."
+  az rest --method put \\
+    --uri "https://management.azure.com$APIM_ID/backends/anpi-app-service?api-version=2021-08-01" \\
+    --body @/tmp/backend.json
+  
+  rm /tmp/backend.json
+fi
 
 # Set API Policy to use backend
+echo "Creating API policy..."
 cat > /tmp/apim-policy.xml << EOF
 <policies>
   <inbound>
@@ -681,11 +630,32 @@ cat > /tmp/apim-policy.xml << EOF
 </policies>
 EOF
 
-az apim api policy set \\
-  --resource-group $RG_NAME \\
-  --service-name "{apim_name}" \\
-  --api-id "{api_id}" \\
-  --value-file /tmp/apim-policy.xml
+# Try to set the policy using different methods
+echo "Setting API policy..."
+if az apim api policy set --help &>/dev/null; then
+  # If the command exists, use it
+  az apim api policy set \\
+    --resource-group $RG_NAME \\
+    --service-name "{apim_name}" \\
+    --api-id "{api_id}" \\
+    --value-file /tmp/apim-policy.xml
+else
+  # If the command doesn't exist, use the REST API directly
+  echo "Command 'az apim api policy set' not found. Using REST API instead..."
+  
+  # Get the API Management service details
+  APIM_ID=$(az apim show \\
+    --name {apim_name} \\
+    --resource-group $RG_NAME \\
+    --query id -o tsv)
+  
+  # Apply the policy using REST API
+  POLICY_CONTENT=$(cat /tmp/apim-policy.xml)
+  az rest --method put \\
+    --uri "https://management.azure.com$APIM_ID/apis/{api_id}/policies/policy?api-version=2021-08-01" \\
+    --headers "Content-Type=application/json" \\
+    --body "{{\\\"properties\\\": {{\\\"format\\\": \\\"xml\\\", \\\"value\\\": \\\"$POLICY_CONTENT\\\"}} }}"
+fi
 
 rm /tmp/apim-policy.xml
 
@@ -694,9 +664,6 @@ az keyvault secret set --vault-name {kv_name} --name anpi-MicrosoftAppId --value
 az keyvault secret set --vault-name {kv_name} --name anpi-MicrosoftAppPassword --value "$MS_APP_PASSWORD"
 az keyvault secret set --vault-name {kv_name} --name anpi-MicrosoftAppTenantId --value "$MS_APP_TENANT_ID"
 az keyvault secret set --vault-name {kv_name} --name anpi-JwtSecretKey --value "{jwt_secret_key}"
-az keyvault secret set --vault-name {kv_name} --name anpi-CosmosDbConnectionString --value "$COSMOS_CONNECTION_STRING"
-az keyvault secret set --vault-name {kv_name} --name anpi-AzureOpenAIKey --value "$AZURE_OPENAI_KEY"
-az keyvault secret set --vault-name {kv_name} --name anpi-AzureSearchApiKey --value "$AZURE_SEARCH_KEY"
 
 # Grant Key Vault access to App Service
 az role assignment create \\
@@ -729,14 +696,14 @@ az webapp config appsettings set \\
   JwtSettings__SecretKey="@Microsoft.KeyVault(SecretUri=${{KV_URI}}secrets/anpi-JwtSecretKey/)" \\
   JwtSettings__ExpiryInMinutes="{jwt_expiry_minutes}" \\
   CosmosDb__DatabaseName="{cosmos_db_name}" \\
-  AzureOpenAI__Endpoint="$AZURE_OPENAI_ENDPOINT" \\
-  AzureOpenAI__Key="@Microsoft.KeyVault(SecretUri=${{KV_URI}}secrets/anpi-AzureOpenAIKey/)" \\
+  AzureOpenAI__Endpoint="@Microsoft.KeyVault(SecretUri=${{KV_URI}}secrets/anpi-OpenAIEndpoint/)" \\
+  AzureOpenAI__Key="@Microsoft.KeyVault(SecretUri=${{KV_URI}}secrets/anpi-OpenAIApiKey/)" \\
   AzureOpenAI__DeploymentId="$AZURE_OPENAI_MODEL" \\
   AzureOpenAI__ApiVersion="2024-02-15-preview" \\
   AzureOpenAI__EmbeddingApiVersion="2023-05-15" \\
   AzureOpenAI__EmbeddingDeploymentId="$EMBEDDING_MODEL" \\
-  AzureSearch__Endpoint="$AZURE_SEARCH_ENDPOINT" \\
-  AzureSearch__ApiKey="@Microsoft.KeyVault(SecretUri=${{KV_URI}}secrets/anpi-AzureSearchApiKey/)" \\
+  AzureSearch__Endpoint="@Microsoft.KeyVault(SecretUri=${{KV_URI}}secrets/anpi-SearchEndpoint/)" \\
+  AzureSearch__ApiKey="@Microsoft.KeyVault(SecretUri=${{KV_URI}}secrets/anpi-SearchApiKey/)" \\
   AzureSearch__IndexName="{search_index_name}" \\
   AzureSearch__SemanticConfig="{semantic_config_name}" \\
   SCM_ENABLED=true
@@ -756,32 +723,37 @@ az keyvault secret list --vault-name {kv_name} -o table
 az apim backend show --backend-id anpi-app-service --service-name {apim_name} --resource-group $RG_NAME -o table
 """
 
-def generate_bot_service(bot_name, app_name, apim_name, api_id):
+def generate_bot_service(bot_name, app_name, apim_name, api_id, api_path="anpi"):
     """Generate bot service script section"""
     return f"""
 # Create Bot Service
+# First, get the APIM gateway URL (base URL)
+echo "Getting APIM gateway URL for Bot Service endpoint..."
+APIM_GATEWAY_URL=$(az apim show \\
+  --name {apim_name} \\
+  --resource-group $RG_NAME \\
+  --query properties.gatewayUrl -o tsv)
+
+# If that doesn't work, construct it from the APIM name
+if [ -z "$APIM_GATEWAY_URL" ]; then
+  echo "Could not get gateway URL directly, constructing from APIM name..."
+  APIM_GATEWAY_URL="https://{apim_name}.azure-api.net"
+fi
+
+# Construct the full API URL with the API path
+APIM_API_URL="${{APIM_GATEWAY_URL}}/{api_path}"
+APIM_MESSAGES_ENDPOINT="$APIM_API_URL/api/messages"
+
+echo "Bot Service will use endpoint: $APIM_MESSAGES_ENDPOINT"
+
+# Create Bot Service with APIM endpoint directly
 az bot create \\
   --resource-group $RG_NAME \\
   --name {bot_name} \\
   --appid "$MS_APP_ID" \\
-  --endpoint "https://{app_name}.azurewebsites.net/api/messages" \\
+  --endpoint "$APIM_MESSAGES_ENDPOINT" \\
   --app-type SingleTenant \\
   --tenant-id "$MS_APP_TENANT_ID"
-
-# Get APIM API URL
-APIM_API_URL=$(az apim api show \\
-  --resource-group $RG_NAME \\
-  --service-name "{apim_name}" \\
-  --api-id "{api_id}" \\
-  --query serviceUrl -o tsv)
-
-APIM_MESSAGES_ENDPOINT="$APIM_API_URL/api/messages"
-
-# Update Bot Service to use APIM URL
-az bot update \\
-  --resource-group $RG_NAME \\
-  --name {bot_name} \\
-  --endpoint "$APIM_MESSAGES_ENDPOINT"
 
 # Verification:
 # Azure Portal:
@@ -791,7 +763,15 @@ az bot update \\
 # CLI Verification:
 az bot show --name {bot_name} --resource-group $RG_NAME -o table
 # Verify the endpoint points to APIM
-az bot show --name {bot_name} --resource-group $RG_NAME --query properties.endpoint -o tsv
+BOT_ENDPOINT=$(az bot show --name {bot_name} --resource-group $RG_NAME --query properties.endpoint -o tsv)
+echo "Bot Service endpoint: $BOT_ENDPOINT"
+
+# Validate the endpoint contains the APIM URL
+if [[ "$BOT_ENDPOINT" == *"{apim_name}"* ]]; then
+  echo "✅ Bot Service is correctly configured to use APIM endpoint"
+else
+  echo "❌ Bot Service endpoint does not contain APIM URL. Please check configuration."
+fi
 """
 
 def generate_teams_integration(teams_app_name, teams_redirect_uri, kv_name):
@@ -1097,18 +1077,19 @@ def generate_all_scripts(params):
     )
     
     data_ai = generate_data_ai_services(
-        kv_name,  # Use corrected name
-        cosmos_name,  # Use corrected name
-        params['cosmos_db_name'],
-        openai_name,  # Use corrected name
-        params['openai_model'],
-        params['model_version'],
-        params['embedding_model'],
-        params['embedding_model_version'],
-        search_name,  # Use corrected name
-        params['search_sku'],
-        params['search_index_name'],
-        params['semantic_config_name']
+      kv_name,  # Use corrected name
+      cosmos_name,  # Use corrected name
+      params['cosmos_db_name'],
+      openai_name,  # Use corrected name
+      params['openai_model'],
+      params['model_version'],
+      params['embedding_model'],
+      params['embedding_model_version'],
+      search_name,  # Use corrected name
+      params['search_sku'],
+      params['search_index_name'],
+      params['semantic_config_name'],
+      params.get('openai_region', params['location'])  # Default to global location if not specified
     )
     
     web_app = generate_web_app(
