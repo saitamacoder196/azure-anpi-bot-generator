@@ -2337,3 +2337,1131 @@ def get_teams_app_manifest_download_link(app_name, bot_id, package_name, env):
     href = f'<a href="data:application/zip;base64,{b64}" download="{file_name}" class="download-button">📥 Download Teams App Package</a>'
     
     return href
+  
+def generate_postman_collection(api_display_name, env, api_path, apim_name, api_base_url):
+    """
+    Generate a Postman collection JSON for ANPI Bot APIs
+    
+    Args:
+        api_display_name (str): Display name for the API
+        env (str): Environment (dev, test, etc.)
+        api_path (str): API path
+        apim_name (str): API Management service name
+        api_base_url (str): The base URL for direct API access
+        
+    Returns:
+        str: JSON string for the Postman collection
+    """
+    import json
+    import uuid
+    
+    # Generate a collection ID
+    collection_id = str(uuid.uuid4())
+    request_id_base = str(uuid.uuid4())
+    
+    # APIM endpoint URL
+    apim_url = f"https://{apim_name}.azure-api.net/{api_path}"
+    
+    # Create the collection structure
+    collection = {
+        "info": {
+            "_postman_id": collection_id,
+            "name": f"{api_display_name} - {env.upper()}",
+            "description": f"API Collection for ANPI Bot - {env.upper()} Environment",
+            "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+            # Authentication Folder
+            {
+                "name": "Authentication",
+                "description": "Authentication endpoints",
+                "item": [
+                    {
+                        "name": "Login",
+                        "request": {
+                            "method": "POST",
+                            "header": [
+                                {
+                                    "key": "Content-Type",
+                                    "value": "application/json"
+                                }
+                            ],
+                            "body": {
+                                "mode": "raw",
+                                "raw": "{\n    \"userId\": \"your-client-id\",\n    \"apiKey\": \"your-api-key\"\n}"
+                            },
+                            "url": {
+                                "raw": f"{apim_url}/api/auth/token",
+                                "protocol": "https",
+                                "host": apim_url.replace("https://", "").split("/")[0].split("."),
+                                "path": [api_path, "api", "auth", "token"]
+                            },
+                            "description": "Login to obtain JWT token"
+                        },
+                        "response": []
+                    },
+                    {
+                        "name": "Refresh Token",
+                        "request": {
+                            "method": "POST",
+                            "header": [
+                                {
+                                    "key": "Authorization",
+                                    "value": "Bearer {{token}}"
+                                }
+                            ],
+                            "url": {
+                                "raw": f"{apim_url}/api/auth/refresh-token",
+                                "protocol": "https",
+                                "host": apim_url.replace("https://", "").split("/")[0].split("."),
+                                "path": [api_path, "api", "auth", "refresh-token"]
+                            },
+                            "description": "Refresh the JWT token"
+                        },
+                        "response": []
+                    },
+                    {
+                        "name": "Validate Token",
+                        "request": {
+                            "method": "GET",
+                            "header": [
+                                {
+                                    "key": "Authorization",
+                                    "value": "Bearer {{token}}"
+                                }
+                            ],
+                            "url": {
+                                "raw": f"{apim_url}/api/auth/validate",
+                                "protocol": "https",
+                                "host": apim_url.replace("https://", "").split("/")[0].split("."),
+                                "path": [api_path, "api", "auth", "validate"]
+                            },
+                            "description": "Validate the JWT token"
+                        },
+                        "response": []
+                    }
+                ]
+            },
+            # Broadcast Folder
+            {
+                "name": "Broadcast",
+                "description": "Message broadcast endpoints",
+                "item": [
+                    {
+                        "name": "Send ANPI Confirmations",
+                        "request": {
+                            "method": "POST",
+                            "header": [
+                                {
+                                    "key": "Content-Type",
+                                    "value": "application/json"
+                                },
+                                {
+                                    "key": "Authorization",
+                                    "value": "Bearer {{token}}"
+                                }
+                            ],
+                            "body": {
+                                "mode": "raw",
+                                "raw": "{\n    \"recipients\": [\n        {\n            \"username\": \"user1\",\n            \"nationality\": \"en\",\n            \"token\": \"user-token\"\n        }\n    ],\n    \"channel\": \"msteams\",\n    \"event\": {\n        \"isResend\": false,\n        \"eventId\": 123,\n        \"dateTime\": \"2025-05-05T12:30:00Z\",\n        \"severity\": \"High\",\n        \"location\": \"Tokyo\",\n        \"earthquakeMaxIntRate\": \"5+\",\n        \"link\": \"https://example.com/event/123\"\n    }\n}"
+                            },
+                            "url": {
+                                "raw": f"{apim_url}/api/broadcast/anpi-confirms",
+                                "protocol": "https",
+                                "host": apim_url.replace("https://", "").split("/")[0].split("."),
+                                "path": [api_path, "api", "broadcast", "anpi-confirms"]
+                            },
+                            "description": "Send ANPI confirmation messages"
+                        },
+                        "response": []
+                    },
+                    {
+                        "name": "Send Earthquake Alert",
+                        "request": {
+                            "method": "POST",
+                            "header": [
+                                {
+                                    "key": "Content-Type",
+                                    "value": "application/json"
+                                },
+                                {
+                                    "key": "Authorization",
+                                    "value": "Bearer {{token}}"
+                                }
+                            ],
+                            "body": {
+                                "mode": "raw",
+                                "raw": "{\n    \"recipients\": [\n        {\n            \"username\": \"leader1\",\n            \"nationality\": \"en\",\n            \"token\": \"leader-token\"\n        }\n    ],\n    \"channel\": \"msteams\",\n    \"event\": {\n        \"isResend\": false,\n        \"eventId\": 123,\n        \"dateTime\": \"2025-05-05T12:30:00Z\",\n        \"severity\": \"High\",\n        \"location\": \"Tokyo\",\n        \"earthquakeMaxIntRate\": \"5+\",\n        \"link\": \"https://example.com/event/123\"\n    }\n}"
+                            },
+                            "url": {
+                                "raw": f"{apim_url}/api/broadcast/leaderships-earthquakealert",
+                                "protocol": "https",
+                                "host": apim_url.replace("https://", "").split("/")[0].split("."),
+                                "path": [api_path, "api", "broadcast", "leaderships-earthquakealert"]
+                            },
+                            "description": "Send earthquake alerts to leadership"
+                        },
+                        "response": []
+                    },
+                    {
+                        "name": "Send Status Report",
+                        "request": {
+                            "method": "POST",
+                            "header": [
+                                {
+                                    "key": "Content-Type",
+                                    "value": "application/json"
+                                },
+                                {
+                                    "key": "Authorization",
+                                    "value": "Bearer {{token}}"
+                                }
+                            ],
+                            "body": {
+                                "mode": "raw",
+                                "raw": "{\n    \"recipients\": [\n        {\n            \"username\": \"leader1\",\n            \"nationality\": \"en\",\n            \"token\": \"leader-token\"\n        }\n    ],\n    \"channel\": \"msteams\",\n    \"event\": {\n        \"isResend\": false,\n        \"eventId\": 123,\n        \"dateTime\": \"2025-05-05T12:30:00Z\",\n        \"severity\": \"High\",\n        \"location\": \"Tokyo\",\n        \"earthquakeMaxIntRate\": \"5+\",\n        \"link\": \"https://example.com/event/123\"\n    },\n    \"statusReport\": {\n        \"titleConfig\": \"Status Report\",\n        \"totalInfluencers\": 50,\n        \"totalUnconfirmed\": 10,\n        \"totalPeopleWithProblems\": 5\n    }\n}"
+                            },
+                            "url": {
+                                "raw": f"{apim_url}/api/broadcast/leaderships-statusreport",
+                                "protocol": "https",
+                                "host": apim_url.replace("https://", "").split("/")[0].split("."),
+                                "path": [api_path, "api", "broadcast", "leaderships-statusreport"]
+                            },
+                            "description": "Send status reports to leadership"
+                        },
+                        "response": []
+                    },
+                    {
+                        "name": "Send Notification",
+                        "request": {
+                            "method": "POST",
+                            "header": [
+                                {
+                                    "key": "Content-Type",
+                                    "value": "application/json"
+                                },
+                                {
+                                    "key": "Authorization",
+                                    "value": "Bearer {{token}}"
+                                }
+                            ],
+                            "body": {
+                                "mode": "raw",
+                                "raw": "{\n    \"recipients\": [\n        {\n            \"username\": \"user1\",\n            \"nationality\": \"en\",\n            \"token\": \"user-token\"\n        }\n    ],\n    \"channel\": \"msteams\",\n    \"messageMarkdown\": \"**Important Notice**: Please check the safety status of your team members.\",\n    \"dialogName\": \"SafetyCheck\"\n}"
+                            },
+                            "url": {
+                                "raw": f"{apim_url}/api/broadcast/notify",
+                                "protocol": "https",
+                                "host": apim_url.replace("https://", "").split("/")[0].split("."),
+                                "path": [api_path, "api", "broadcast", "notify"]
+                            },
+                            "description": "Send custom notifications"
+                        },
+                        "response": []
+                    }
+                ]
+            },
+            # Health Folder
+            {
+                "name": "Health",
+                "description": "Health check endpoints",
+                "item": [
+                    {
+                        "name": "Get Alive",
+                        "request": {
+                            "method": "GET",
+                            "header": [],
+                            "url": {
+                                "raw": f"{apim_url}/api/alive",
+                                "protocol": "https",
+                                "host": apim_url.replace("https://", "").split("/")[0].split("."),
+                                "path": [api_path, "api", "alive"]
+                            },
+                            "description": "Check if the API is alive"
+                        },
+                        "response": []
+                    },
+                    {
+                        "name": "Get Version",
+                        "request": {
+                            "method": "GET",
+                            "header": [],
+                            "url": {
+                                "raw": f"{apim_url}/api/alive/version",
+                                "protocol": "https",
+                                "host": apim_url.replace("https://", "").split("/")[0].split("."),
+                                "path": [api_path, "api", "alive", "version"]
+                            },
+                            "description": "Get the API version"
+                        },
+                        "response": []
+                    },
+                    {
+                        "name": "Get Status",
+                        "request": {
+                            "method": "GET",
+                            "header": [
+                                {
+                                    "key": "Authorization",
+                                    "value": "Bearer {{token}}"
+                                }
+                            ],
+                            "url": {
+                                "raw": f"{apim_url}/api/alive/status",
+                                "protocol": "https",
+                                "host": apim_url.replace("https://", "").split("/")[0].split("."),
+                                "path": [api_path, "api", "alive", "status"]
+                            },
+                            "description": "Get the API status (authenticated)"
+                        },
+                        "response": []
+                    }
+                ]
+            },
+            # Bot Folder
+            {
+                "name": "Bot",
+                "description": "Bot Framework endpoints",
+                "item": [
+                    {
+                        "name": "Bot Messages",
+                        "request": {
+                            "method": "POST",
+                            "header": [
+                                {
+                                    "key": "Content-Type",
+                                    "value": "application/json"
+                                }
+                            ],
+                            "body": {
+                                "mode": "raw",
+                                "raw": "{\n    \"type\": \"message\",\n    \"text\": \"Hello, bot!\"\n}"
+                            },
+                            "url": {
+                                "raw": f"{apim_url}/api/messages",
+                                "protocol": "https",
+                                "host": apim_url.replace("https://", "").split("/")[0].split("."),
+                                "path": [api_path, "api", "messages"]
+                            },
+                            "description": "Bot Framework message endpoint"
+                        },
+                        "response": []
+                    }
+                ]
+            },
+            # Direct Access Folder (optional, for direct Web App access)
+            {
+                "name": "Direct Access",
+                "description": "Direct access to the App Service (bypassing APIM)",
+                "item": [
+                    {
+                        "name": "Health Check (Direct)",
+                        "request": {
+                            "method": "GET",
+                            "header": [],
+                            "url": {
+                                "raw": f"{api_base_url}/api/alive",
+                                "protocol": "https",
+                                "host": api_base_url.replace("https://", "").split("."),
+                                "path": ["api", "alive"]
+                            },
+                            "description": "Direct health check to App Service"
+                        },
+                        "response": []
+                    }
+                ]
+            }
+        ],
+        "event": [],
+        "variable": [
+            {
+                "key": "token",
+                "value": "your-jwt-token",
+                "description": "JWT Authentication Token"
+            }
+        ]
+    }
+    
+    return json.dumps(collection, indent=2)
+
+def get_postman_collection_download_link(api_display_name, env, api_path, apim_name, api_base_url):
+    """
+    Create a downloadable link for Postman collection JSON
+    
+    Args:
+        api_display_name (str): Display name for the API
+        env (str): Environment (dev, test, etc.)
+        api_path (str): API path
+        apim_name (str): API Management service name
+        api_base_url (str): The base URL for direct API access
+        
+    Returns:
+        str: HTML link for downloading the collection
+    """
+    import base64
+    from datetime import datetime
+    
+    # Generate the Postman collection JSON
+    collection_json = generate_postman_collection(api_display_name, env, api_path, apim_name, api_base_url)
+    
+    # Convert to base64 for download link
+    b64 = base64.b64encode(collection_json.encode()).decode()
+    
+    # Create filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"anpi_postman_collection_{env.lower()}_{timestamp}.json"
+    
+    # Create HTML download link
+    href = f'<a href="data:application/json;base64,{b64}" download="{filename}" class="download-button">📥 Download Postman Collection</a>'
+    
+    return href
+  
+def generate_swagger_json(api_display_name, env, api_path, apim_name):
+    """
+    Generate a Swagger/OpenAPI JSON for ANPI Bot APIs
+    
+    Args:
+        api_display_name (str): Display name for the API
+        env (str): Environment (dev, test, etc.)
+        api_path (str): API path
+        apim_name (str): API Management service name
+        
+    Returns:
+        str: JSON string for the Swagger/OpenAPI specification
+    """
+    import json
+    
+    # APIM endpoint URL
+    apim_url = f"https://{apim_name}.azure-api.net/{api_path}"
+    
+    # Create the swagger/OpenAPI structure
+    swagger_spec = {
+        "openapi": "3.0.1",
+        "info": {
+            "title": f"{api_display_name}",
+            "description": f"API for FJP ANPI Safety Confirmation System Bot - {env.upper()}",
+            "version": "1.0"
+        },
+        "servers": [
+            {
+                "url": f"{apim_url}"
+            }
+        ],
+        "paths": {
+            "/api/auth/token": {
+                "post": {
+                    "tags": [
+                        "Authentication"
+                    ],
+                    "summary": "Login to get JWT token",
+                    "description": "Login to get JWT token",
+                    "operationId": "login",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/LoginRequest"
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Login successful",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/LoginResponse"
+                                    }
+                                }
+                            }
+                        },
+                        "401": {
+                            "description": "Unauthorized"
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    }
+                }
+            },
+            "/api/auth/refresh-token": {
+                "post": {
+                    "tags": [
+                        "Authentication"
+                    ],
+                    "summary": "Refresh JWT token",
+                    "description": "Refresh JWT token",
+                    "operationId": "refreshToken",
+                    "responses": {
+                        "200": {
+                            "description": "Token refreshed successfully",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/LoginResponse"
+                                    }
+                                }
+                            }
+                        },
+                        "401": {
+                            "description": "Unauthorized"
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    },
+                    "security": [
+                        {
+                            "bearerAuth": []
+                        }
+                    ]
+                }
+            },
+            "/api/auth/validate": {
+                "get": {
+                    "tags": [
+                        "Authentication"
+                    ],
+                    "summary": "Validate JWT token",
+                    "description": "Validate JWT token",
+                    "operationId": "validateToken",
+                    "responses": {
+                        "200": {
+                            "description": "Token is valid",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "valid": {
+                                                "type": "boolean"
+                                            },
+                                            "userId": {
+                                                "type": "string"
+                                            },
+                                            "userName": {
+                                                "type": "string"
+                                            },
+                                            "roles": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "401": {
+                            "description": "Unauthorized"
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    },
+                    "security": [
+                        {
+                            "bearerAuth": []
+                        }
+                    ]
+                }
+            },
+            "/api/broadcast/anpi-confirms": {
+                "post": {
+                    "tags": [
+                        "Broadcast"
+                    ],
+                    "summary": "Send emergency ANPI confirmation messages to users",
+                    "description": "Send emergency ANPI confirmation messages to users",
+                    "operationId": "sendAnpiConfirms",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SimpleBroadcastRequest"
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Broadcast messages sent successfully",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/BroadcastResponse"
+                                    }
+                                }
+                            }
+                        },
+                        "400": {
+                            "description": "Bad request"
+                        },
+                        "401": {
+                            "description": "Unauthorized"
+                        },
+                        "403": {
+                            "description": "Forbidden"
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    },
+                    "security": [
+                        {
+                            "bearerAuth": []
+                        }
+                    ]
+                }
+            },
+            "/api/broadcast/leaderships-earthquakealert": {
+                "post": {
+                    "tags": [
+                        "Broadcast"
+                    ],
+                    "summary": "Send earthquake alert to leadership members",
+                    "description": "Send earthquake alert to leadership members",
+                    "operationId": "sendEarthquakeAlert",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SimpleBroadcastRequest"
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Earthquake alert sent successfully",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/BroadcastResponse"
+                                    }
+                                }
+                            }
+                        },
+                        "400": {
+                            "description": "Bad request"
+                        },
+                        "401": {
+                            "description": "Unauthorized"
+                        },
+                        "403": {
+                            "description": "Forbidden"
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    },
+                    "security": [
+                        {
+                            "bearerAuth": []
+                        }
+                    ]
+                }
+            },
+            "/api/broadcast/leaderships-statusreport": {
+                "post": {
+                    "tags": [
+                        "Broadcast"
+                    ],
+                    "summary": "Send status report to leadership members",
+                    "description": "Send status report to leadership members",
+                    "operationId": "sendStatusReport",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusReportBroadcastRequest"
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Status report sent successfully",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/BroadcastResponse"
+                                    }
+                                }
+                            }
+                        },
+                        "400": {
+                            "description": "Bad request"
+                        },
+                        "401": {
+                            "description": "Unauthorized"
+                        },
+                        "403": {
+                            "description": "Forbidden"
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    },
+                    "security": [
+                        {
+                            "bearerAuth": []
+                        }
+                    ]
+                }
+            },
+            "/api/broadcast/notify": {
+                "post": {
+                    "tags": [
+                        "Broadcast"
+                    ],
+                    "summary": "Send custom notification to users",
+                    "description": "Send custom notification to users",
+                    "operationId": "sendNotification",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotificationRequest"
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Notification sent successfully",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/BroadcastResponse"
+                                    }
+                                }
+                            }
+                        },
+                        "400": {
+                            "description": "Bad request"
+                        },
+                        "401": {
+                            "description": "Unauthorized"
+                        },
+                        "403": {
+                            "description": "Forbidden"
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    },
+                    "security": [
+                        {
+                            "bearerAuth": []
+                        }
+                    ]
+                }
+            },
+            "/api/alive": {
+                "get": {
+                    "tags": [
+                        "Health"
+                    ],
+                    "summary": "Get current date and time",
+                    "description": "Get current date and time",
+                    "operationId": "getAlive",
+                    "responses": {
+                        "200": {
+                            "description": "Current date and time",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    }
+                                }
+                            }
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    }
+                }
+            },
+            "/api/alive/version": {
+                "get": {
+                    "tags": [
+                        "Health"
+                    ],
+                    "summary": "Get application version",
+                    "description": "Get application version",
+                    "operationId": "getVersion",
+                    "responses": {
+                        "200": {
+                            "description": "Application version",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    }
+                }
+            },
+            "/api/alive/status": {
+                "get": {
+                    "tags": [
+                        "Health"
+                    ],
+                    "summary": "Get application status",
+                    "description": "Get application status",
+                    "operationId": "getStatus",
+                    "responses": {
+                        "200": {
+                            "description": "Application status",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object"
+                                    }
+                                }
+                            }
+                        },
+                        "401": {
+                            "description": "Unauthorized"
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    },
+                    "security": [
+                        {
+                            "bearerAuth": []
+                        }
+                    ]
+                }
+            },
+            "/api/messages": {
+                "post": {
+                    "tags": [
+                        "Bot"
+                    ],
+                    "summary": "Bot Framework message endpoint",
+                    "description": "Bot Framework message endpoint",
+                    "operationId": "botMessages",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "OK"
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    }
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "LoginRequest": {
+                    "required": [
+                        "userId",
+                        "apiKey"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "userId": {
+                            "type": "string"
+                        },
+                        "apiKey": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "LoginResponse": {
+                    "type": "object",
+                    "properties": {
+                        "token": {
+                            "type": "string"
+                        },
+                        "userId": {
+                            "type": "string"
+                        },
+                        "userName": {
+                            "type": "string"
+                        },
+                        "email": {
+                            "type": "string"
+                        },
+                        "roles": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "expiresIn": {
+                            "type": "integer",
+                            "format": "int32"
+                        }
+                    }
+                },
+                "SimpleRecipient": {
+                    "required": [
+                        "username"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "username": {
+                            "type": "string",
+                            "description": "User's login name"
+                        },
+                        "nationality": {
+                            "type": "string",
+                            "description": "User's nationality (determines language preference)"
+                        },
+                        "token": {
+                            "type": "string",
+                            "description": "User's authentication token"
+                        }
+                    }
+                },
+                "EventDetails": {
+                    "required": [
+                        "eventId",
+                        "dateTime",
+                        "severity",
+                        "location"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "isResend": {
+                            "type": "boolean",
+                            "description": "Whether this is a resent notification",
+                            "default": False
+                        },
+                        "eventId": {
+                            "type": "integer",
+                            "description": "Unique identifier for the event",
+                            "format": "int32"
+                        },
+                        "dateTime": {
+                            "type": "string",
+                            "description": "Date and time of the event",
+                            "format": "date-time"
+                        },
+                        "severity": {
+                            "type": "string",
+                            "description": "Severity level of the event"
+                        },
+                        "location": {
+                            "type": "string",
+                            "description": "Geographic location of the event"
+                        },
+                        "earthquakeMaxIntRate": {
+                            "type": "string",
+                            "description": "Maximum earthquake intensity rating"
+                        },
+                        "link": {
+                            "type": "string",
+                            "description": "URL with more information about the event"
+                        }
+                    }
+                },
+                "StatusReportInfo": {
+                    "type": "object",
+                    "properties": {
+                        "titleConfig": {
+                            "type": "string",
+                            "description": "Title for the status report"
+                        },
+                        "totalInfluencers": {
+                            "type": "integer",
+                            "description": "Total number of impacted employees",
+                            "format": "int32"
+                        },
+                        "totalUnconfirmed": {
+                            "type": "integer",
+                            "description": "Number of employees who haven't confirmed status",
+                            "format": "int32"
+                        },
+                        "totalPeopleWithProblems": {
+                            "type": "integer",
+                            "description": "Number of employees reporting problems",
+                            "format": "int32"
+                        }
+                    }
+                },
+                "SimpleBroadcastRequest": {
+                    "required": [
+                        "recipients",
+                        "channel",
+                        "event"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "recipients": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/SimpleRecipient"
+                            }
+                        },
+                        "channel": {
+                            "type": "string",
+                            "description": "Communication channel to use (e.g., msteams, webchat)"
+                        },
+                        "event": {
+                            "$ref": "#/components/schemas/EventDetails"
+                        }
+                    }
+                },
+                "StatusReportBroadcastRequest": {
+                    "required": [
+                        "recipients",
+                        "channel",
+                        "event",
+                        "statusReport"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "recipients": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/SimpleRecipient"
+                            }
+                        },
+                        "channel": {
+                            "type": "string",
+                            "description": "Communication channel to use"
+                        },
+                        "event": {
+                            "$ref": "#/components/schemas/EventDetails"
+                        },
+                        "statusReport": {
+                            "$ref": "#/components/schemas/StatusReportInfo"
+                        }
+                    }
+                },
+                "NotificationRequest": {
+                    "required": [
+                        "recipients",
+                        "messageMarkdown"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "recipients": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/SimpleRecipient"
+                            }
+                        },
+                        "channel": {
+                            "type": "string",
+                            "description": "Communication channel to use"
+                        },
+                        "messageMarkdown": {
+                            "type": "string",
+                            "description": "Message content in markdown format"
+                        },
+                        "dialogName": {
+                            "type": "string",
+                            "description": "Dialog name for tracking purposes"
+                        }
+                    }
+                },
+                "BroadcastResponse": {
+                    "type": "object",
+                    "properties": {
+                        "message": {
+                            "type": "string",
+                            "description": "Success/failure message"
+                        },
+                        "timestamp": {
+                            "type": "string",
+                            "description": "When the broadcast was sent",
+                            "format": "date-time"
+                        },
+                        "eventId": {
+                            "type": "integer",
+                            "description": "ID of the event that prompted the broadcast",
+                            "format": "int32"
+                        },
+                        "recipientCount": {
+                            "type": "integer",
+                            "description": "Number of recipients who received the message",
+                            "format": "int32"
+                        }
+                    }
+                }
+            },
+            "securitySchemes": {
+                "bearerAuth": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "bearerFormat": "JWT"
+                },
+                "apiKeyHeader": {
+                    "type": "apiKey",
+                    "name": "Ocp-Apim-Subscription-Key",
+                    "in": "header"
+                },
+                "apiKeyQuery": {
+                    "type": "apiKey",
+                    "name": "subscription-key",
+                    "in": "query"
+                }
+            }
+        },
+        "security": [
+            {
+                "apiKeyHeader": []
+            },
+            {
+                "apiKeyQuery": []
+            }
+        ]
+    }
+    
+    return json.dumps(swagger_spec, indent=2)
+
+def get_swagger_json_download_link(api_display_name, env, api_path, apim_name):
+    """
+    Create a downloadable link for Swagger/OpenAPI JSON
+    
+    Args:
+        api_display_name (str): Display name for the API
+        env (str): Environment (dev, test, etc.)
+        api_path (str): API path
+        apim_name (str): API Management service name
+        
+    Returns:
+        str: HTML link for downloading the JSON
+    """
+    import base64
+    from datetime import datetime
+    
+    # Generate the Swagger JSON
+    swagger_json = generate_swagger_json(api_display_name, env, api_path, apim_name)
+    
+    # Convert to base64 for download link
+    b64 = base64.b64encode(swagger_json.encode()).decode()
+    
+    # Create filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"anpi_swagger_{env.lower()}_{timestamp}.json"
+    
+    # Create HTML download link
+    href = f'<a href="data:application/json;base64,{b64}" download="{filename}" class="download-button">📥 Download Swagger/OpenAPI JSON</a>'
+    
+    return href
+  

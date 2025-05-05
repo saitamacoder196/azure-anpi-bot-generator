@@ -2,9 +2,10 @@
 UI components for the Streamlit application.
 """
 from datetime import datetime
+import json
 import streamlit as st
-from utils import generate_azure_pipeline_yaml, get_apim_policy_xml, get_initial_knowledge_json, get_json_download_link, get_markdown_download_link, generate_jwt_secret, create_markdown_content, get_search_datasource_json, get_search_index_json, get_search_indexer_json, get_settings_download_link, get_teams_app_manifest_download_link, get_xml_download_link, get_yaml_download_link, parse_uploaded_settings, get_full_settings_download_link
-from state import update_jwt_secret
+from utils import generate_azure_pipeline_yaml, get_apim_policy_xml, get_initial_knowledge_json, get_json_download_link, get_markdown_download_link, generate_jwt_secret, create_markdown_content, get_postman_collection_download_link, get_search_datasource_json, get_search_index_json, get_search_indexer_json, get_settings_download_link, get_swagger_json_download_link, get_teams_app_manifest_download_link, get_xml_download_link, get_yaml_download_link, parse_uploaded_settings, get_full_settings_download_link
+from state import load_tab_settings, save_tab_settings, update_jwt_secret
 
 def configure_page():
     """Configure the Streamlit page settings with custom CSS"""
@@ -89,7 +90,7 @@ def create_sidebar():
                             from state import load_all_settings
                             load_all_settings(settings)
                             st.success("All settings imported successfully!")
-                            st.experimental_rerun()
+                            st.rerun()
                         elif 'environment' in settings or 'bot' in settings:
                             # Old format (just environment settings)
                             # Create sidebar_values if it doesn't exist
@@ -111,7 +112,7 @@ def create_sidebar():
                                 st.session_state.sidebar_values['ms_app_tenant_id'] = bot_settings.get('ms_app_tenant_id', '')
                             
                             st.success("Environment settings imported successfully!")
-                            st.experimental_rerun()
+                            st.rerun()
                         else:
                             st.error("Unknown settings format. Please use a valid settings file.")
                 else:
@@ -195,7 +196,7 @@ def create_basic_resources_tab():
                     from state import save_tab_settings
                     save_tab_settings('basic_resources', settings)
                     st.success("Basic resources settings imported!")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Failed to parse the uploaded file.")
     
@@ -236,8 +237,8 @@ def create_basic_resources_tab():
             # Update the session state
             new_key = generate_jwt_secret()
             update_jwt_secret(new_key)
-            # Force experimental_rerun
-            st.experimental_rerun()
+            # Force rerun
+            st.rerun()
     
     jwt_expiry_minutes = st.number_input("JWT Expiry Minutes", value=default_jwt_expiry_minutes, min_value=1, max_value=1440)
     
@@ -297,7 +298,7 @@ def create_networking_tab():
                     from state import save_tab_settings
                     save_tab_settings('networking', settings)
                     st.success("Networking settings imported!")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Failed to parse the uploaded file.")
     
@@ -382,7 +383,7 @@ def create_app_service_tab():
                     from state import save_tab_settings
                     save_tab_settings('app_service', settings)
                     st.success("App Service settings imported!")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Failed to parse the uploaded file.")
     
@@ -732,7 +733,7 @@ def create_api_management_tab():
                     from state import save_tab_settings
                     save_tab_settings('api_management', settings)
                     st.success("API Management settings imported!")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Failed to parse the uploaded file.")
     
@@ -790,17 +791,91 @@ def create_api_management_tab():
     from state import save_tab_settings
     save_tab_settings('api_management', current_settings)
     
-    st.subheader("API Management Policy")
-    st.info("You can download a sample policy XML file to configure your API in the Azure Portal.")
+    # API Management configuration downloads section
+    st.subheader("API Management Configuration")
     
-    if st.button("Download APIM Policy XML"):
-        policy_xml = get_apim_policy_xml(allowed_origins)
-        policy_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        download_link = get_xml_download_link(
-            policy_xml,
-            f"apim_policy_{policy_timestamp}.xml"
-        )
-        st.markdown(download_link, unsafe_allow_html=True)
+    # Create three columns for the download buttons
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.info("Download the API policy XML file for configuring your API in the Azure Portal.")
+        if st.button("Download APIM Policy XML"):
+            policy_xml = get_apim_policy_xml(allowed_origins)
+            policy_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            download_link = get_xml_download_link(
+                policy_xml,
+                f"apim_policy_{policy_timestamp}.xml"
+            )
+            st.markdown(download_link, unsafe_allow_html=True)
+    
+    # Get current environment from sidebar values
+    env = st.session_state.sidebar_values.get('env', 'dev')
+    
+    # Get API base URL (for direct access)
+    api_base_url = saved_settings.get('api_base_url', "https://api-test.fjpservice.net")
+    if 'basic_resources' in st.session_state.tab_settings:
+        api_base_url = st.session_state.tab_settings['basic_resources'].get('api_base_url', api_base_url)
+    
+    with col2:
+        st.info("Download a Postman collection for testing your API. Import this file into Postman to test your API endpoints.")
+        if st.button("Download Postman Collection"):
+            postman_download_link = get_postman_collection_download_link(
+                api_display_name,
+                env,
+                api_path,
+                apim_name,
+                api_base_url
+            )
+            st.markdown(postman_download_link, unsafe_allow_html=True)
+            
+    with col3:
+        st.info("Download Swagger/OpenAPI JSON specification for your API. Import into Swagger UI or other OpenAPI tools.")
+        if st.button("Download Swagger JSON"):
+            swagger_download_link = get_swagger_json_download_link(
+                api_display_name,
+                env,
+                api_path,
+                apim_name
+            )
+            st.markdown(swagger_download_link, unsafe_allow_html=True)
+    
+    # Add YAML download button for API Management
+    st.markdown("### API Configuration YAML")
+    st.markdown("Download a sample YAML file for API configuration. You can import this file in the Azure Portal.")
+    
+    # Get app name for YAML generation
+    app_name = f"app-itz-anpi-{env}-001"
+    if 'app_service' in st.session_state.tab_settings:
+        app_name = st.session_state.tab_settings['app_service'].get('app_name', app_name)
+    
+    # Create download link
+    yaml_download_link = get_yaml_download_link(api_display_name, env, app_name, apim_name, api_path)
+    st.markdown(yaml_download_link, unsafe_allow_html=True)
+    
+    # Add guidance about all API documentation formats
+    with st.expander("Understanding API Documentation Formats", expanded=True):
+        st.markdown("""
+        ### API Documentation and Testing Formats
+        
+        This tool provides three different formats for API documentation and testing. Here's a comparison to help you choose the right one for your needs:
+        
+        | Format | Purpose | Best For | Tools |
+        |--------|---------|----------|-------|
+        | **YAML/OpenAPI** | API definition for Azure Portal | Importing into Azure APIM | Azure Portal |
+        | **Postman Collection** | API testing and automation | Developer testing, QA | Postman |
+        | **Swagger/OpenAPI JSON** | Standard API specification | Documentation, various tools | Swagger UI, Swagger Editor, OpenAPI tools |
+        | **APIM Policy XML** | APIM backend configuration | Backend connection, CORS | Azure APIM |
+        
+        #### When to use each format:
+        
+        1. **YAML/OpenAPI**: Use this to import your API definition into Azure API Management. This is the first step when setting up your API.
+        
+        2. **Postman Collection**: Use this for testing your API endpoints. It includes pre-configured requests for all endpoints.
+        
+        3. **Swagger/OpenAPI JSON**: Use this standard format with tools like Swagger UI or to generate client SDKs. This is useful for providing documentation to external developers.
+        
+        4. **APIM Policy XML**: This configures how your API Management service connects to your backend (App Service). It's essential for proper routing and CORS.
+        """)
     
     # Add guidance for using the policy XML
     with st.expander("How to Apply the Policy XML in Azure Portal", expanded=False):
@@ -827,6 +902,78 @@ def create_api_management_tab():
            - After applying the policy, test an API operation to ensure the backend connection works
            - Verify that CORS is properly configured by testing from your client application
         """)
+    
+    # Add guidance for using the Postman collection
+    with st.expander("How to Use the Postman Collection", expanded=False):
+        st.markdown("""
+        ### Using the Postman Collection
+        
+        1. **Import the Collection into Postman**:
+           - Open Postman
+           - Click on "Import" button in the top left
+           - Select the downloaded JSON file
+           - Click "Import" to add the collection to your workspace
+        
+        2. **Set up Environment Variables**:
+           - Create a new Environment in Postman (click on the gear icon → "Add")
+           - Name it "ANPI Bot Environment"
+           - Add a variable named "token" (you'll get this value after logging in)
+        
+        3. **Authentication Flow**:
+           - Run the "Login" request in the Authentication folder first
+           - From the response, copy the token value
+           - Set this value as the "token" environment variable
+        
+        4. **Test Endpoints**:
+           - Now you can test all other endpoints that require authentication
+           - The token will be automatically included in the requests
+        
+        5. **Customizing Requests**:
+           - Update the request bodies as needed for your specific test scenarios
+           - Check the documentation for required parameters for each endpoint
+        
+        **Note**: The collection includes both APIM endpoints and direct access endpoints (bypassing API Management) to help troubleshoot connectivity issues.
+        """)
+        
+    # Add guidance for using the Swagger JSON
+    with st.expander("How to Use the Swagger/OpenAPI JSON", expanded=False):
+        st.markdown("""
+        ### Using the Swagger/OpenAPI JSON
+        
+        1. **View in Swagger UI**:
+           - Go to [Swagger Editor](https://editor.swagger.io/)
+           - Delete the example content
+           - Paste your downloaded JSON or use File > Import File
+           - The right panel will display interactive documentation
+        
+        2. **Generate Client Code**:
+           - In Swagger Editor, click "Generate Client" in the top menu
+           - Select your preferred language (C#, TypeScript, Python, etc.)
+           - Download the generated client SDK
+        
+        3. **Import into API Management**:
+           - In Azure Portal, go to your API Management service
+           - Click "APIs" > "Add API" > "OpenAPI"
+           - Upload your Swagger JSON file
+           - Configure additional settings as needed
+        
+        4. **Use with Other Tools**:
+           - [Postman](https://www.postman.com/): Import > Raw Text > Paste JSON
+           - [Insomnia](https://insomnia.rest/): Create > Import > From File
+           - [ReDoc](https://redocly.github.io/redoc/): Use to generate beautiful static documentation
+           - [OpenAPI Generator](https://openapi-generator.tech/): Command-line tool to generate clients
+        
+        5. **Customize and Extend**:
+           - Edit the JSON to add more detailed descriptions
+           - Add example request/response bodies
+           - Add security definitions as needed
+           
+        **Note**: The Swagger/OpenAPI JSON includes schema definitions for all request and response objects, making it easier for developers to understand the API.
+        """)
+    
+    # Add the API import section to allow uploading and viewing Postman/Swagger files
+    create_api_import_section(st)
+    
     return current_settings
     
 def create_cicd_tab():
@@ -1612,6 +1759,199 @@ def create_deployment_checklist_tab():
         - If access is limited to specific IPs, configure 403 redirect to notification page
         """)
 
+def create_api_import_section(api_management_tab=None):
+    """
+    Create a section for importing API definitions from Postman or Swagger JSON
+    
+    Args:
+        api_management_tab: The streamlit context or None. If None, uses the current streamlit context.
+    """
+    # Check if we need to use a context manager
+    # If api_management_tab is the streamlit module itself (st), we don't need a context manager
+    if api_management_tab is st or api_management_tab is None:
+        # No context manager needed, just use streamlit directly
+        st.markdown("---")
+        st.subheader("Import API Definition")
+        st.info("Import an existing API definition from Postman Collection or Swagger/OpenAPI JSON to view and extract configurations.")
+        
+        # Create tabs for different import types
+        import_tab1, import_tab2 = st.tabs(["Import Postman Collection", "Import Swagger/OpenAPI JSON"])
+        
+        with import_tab1:
+            st.write("Upload a Postman Collection JSON file to extract API endpoints and configurations.")
+            uploaded_postman = st.file_uploader("Choose a Postman Collection file", type=["json"], key="postman_uploader")
+            
+            if uploaded_postman is not None:
+                try:
+                    # Parse the uploaded JSON
+                    postman_data = json.load(uploaded_postman)
+                    
+                    # Display collection information
+                    if "info" in postman_data:
+                        st.success(f"Successfully imported Postman Collection: {postman_data['info'].get('name', 'Unnamed Collection')}")
+                        
+                        # Display collection details
+                        st.markdown("### Collection Information")
+                        st.markdown(f"**Name:** {postman_data['info'].get('name', 'Unnamed')}")
+                        st.markdown(f"**Description:** {postman_data['info'].get('description', 'No description')}")
+                        
+                        # Extract and display folders/endpoint groups
+                        if "item" in postman_data:
+                            st.markdown("### API Endpoints")
+                            
+                            # Process each folder or request
+                            for item in postman_data["item"]:
+                                if "item" in item:  # This is a folder
+                                    st.markdown(f"#### {item.get('name', 'Unnamed Folder')}")
+                                    
+                                    # Process requests in this folder
+                                    for request in item.get("item", []):
+                                        if "request" in request:
+                                            req_data = request["request"]
+                                            method = req_data.get("method", "GET")
+                                            url = req_data.get("url", {})
+                                            url_raw = url.get("raw", "") if isinstance(url, dict) else str(url)
+                                            st.markdown(f"- **{request.get('name', 'Unnamed Request')}**: `{method} {url_raw}`")
+                                else:  # This is a direct request
+                                    if "request" in item:
+                                        req_data = item["request"]
+                                        method = req_data.get("method", "GET")
+                                        url = req_data.get("url", {})
+                                        url_raw = url.get("raw", "") if isinstance(url, dict) else str(url)
+                                        st.markdown(f"- **{item.get('name', 'Unnamed Request')}**: `{method} {url_raw}`")
+                except Exception as e:
+                    st.error(f"Error parsing Postman Collection: {str(e)}")
+        
+        with import_tab2:
+            st.write("Upload a Swagger/OpenAPI JSON file to extract API endpoints and schema definitions.")
+            uploaded_swagger = st.file_uploader("Choose a Swagger/OpenAPI JSON file", type=["json"], key="swagger_uploader")
+            
+            if uploaded_swagger is not None:
+                try:
+                    # Parse the uploaded JSON
+                    swagger_data = json.load(uploaded_swagger)
+                    
+                    # Display API information
+                    if "info" in swagger_data:
+                        st.success(f"Successfully imported Swagger/OpenAPI: {swagger_data['info'].get('title', 'Unnamed API')}")
+                        
+                        # Display API details
+                        st.markdown("### API Information")
+                        st.markdown(f"**Title:** {swagger_data['info'].get('title', 'Unnamed API')}")
+                        st.markdown(f"**Version:** {swagger_data['info'].get('version', 'N/A')}")
+                        st.markdown(f"**Description:** {swagger_data['info'].get('description', 'No description')}")
+                        
+                        # Display servers/base URLs
+                        if "servers" in swagger_data:
+                            st.markdown("### API Servers")
+                            for server in swagger_data["servers"]:
+                                st.markdown(f"- **{server.get('description', 'Server')}**: `{server.get('url', '')}`")
+                        
+                        # Display paths/endpoints
+                        if "paths" in swagger_data:
+                            st.markdown("### API Endpoints")
+                            
+                            for path, methods in swagger_data["paths"].items():
+                                for method, details in methods.items():
+                                    if not method.startswith("x-"):  # Skip extensions
+                                        st.markdown(f"- **{details.get('summary', path)}**: `{method.upper()} {path}`")
+                                        if "description" in details:
+                                            st.markdown(f"  *{details['description']}*")
+                except Exception as e:
+                    st.error(f"Error parsing Swagger/OpenAPI: {str(e)}")
+    else:
+        # Use the provided tab as a context manager (for streamlit tabs)
+        with api_management_tab:
+            st.markdown("---")
+            st.subheader("Import API Definition")
+            st.info("Import an existing API definition from Postman Collection or Swagger/OpenAPI JSON to view and extract configurations.")
+            
+            # Create tabs for different import types
+            import_tab1, import_tab2 = st.tabs(["Import Postman Collection", "Import Swagger/OpenAPI JSON"])
+            
+            with import_tab1:
+                st.write("Upload a Postman Collection JSON file to extract API endpoints and configurations.")
+                uploaded_postman = st.file_uploader("Choose a Postman Collection file", type=["json"], key="postman_uploader")
+                
+                if uploaded_postman is not None:
+                    try:
+                        # Parse the uploaded JSON
+                        postman_data = json.load(uploaded_postman)
+                        
+                        # Display collection information
+                        if "info" in postman_data:
+                            st.success(f"Successfully imported Postman Collection: {postman_data['info'].get('name', 'Unnamed Collection')}")
+                            
+                            # Display collection details
+                            st.markdown("### Collection Information")
+                            st.markdown(f"**Name:** {postman_data['info'].get('name', 'Unnamed')}")
+                            st.markdown(f"**Description:** {postman_data['info'].get('description', 'No description')}")
+                            
+                            # Extract and display folders/endpoint groups
+                            if "item" in postman_data:
+                                st.markdown("### API Endpoints")
+                                
+                                # Process each folder or request
+                                for item in postman_data["item"]:
+                                    if "item" in item:  # This is a folder
+                                        st.markdown(f"#### {item.get('name', 'Unnamed Folder')}")
+                                        
+                                        # Process requests in this folder
+                                        for request in item.get("item", []):
+                                            if "request" in request:
+                                                req_data = request["request"]
+                                                method = req_data.get("method", "GET")
+                                                url = req_data.get("url", {})
+                                                url_raw = url.get("raw", "") if isinstance(url, dict) else str(url)
+                                                st.markdown(f"- **{request.get('name', 'Unnamed Request')}**: `{method} {url_raw}`")
+                                    else:  # This is a direct request
+                                        if "request" in item:
+                                            req_data = item["request"]
+                                            method = req_data.get("method", "GET")
+                                            url = req_data.get("url", {})
+                                            url_raw = url.get("raw", "") if isinstance(url, dict) else str(url)
+                                            st.markdown(f"- **{item.get('name', 'Unnamed Request')}**: `{method} {url_raw}`")
+                    except Exception as e:
+                        st.error(f"Error parsing Postman Collection: {str(e)}")
+            
+            with import_tab2:
+                st.write("Upload a Swagger/OpenAPI JSON file to extract API endpoints and schema definitions.")
+                uploaded_swagger = st.file_uploader("Choose a Swagger/OpenAPI JSON file", type=["json"], key="swagger_uploader")
+                
+                if uploaded_swagger is not None:
+                    try:
+                        # Parse the uploaded JSON
+                        swagger_data = json.load(uploaded_swagger)
+                        
+                        # Display API information
+                        if "info" in swagger_data:
+                            st.success(f"Successfully imported Swagger/OpenAPI: {swagger_data['info'].get('title', 'Unnamed API')}")
+                            
+                            # Display API details
+                            st.markdown("### API Information")
+                            st.markdown(f"**Title:** {swagger_data['info'].get('title', 'Unnamed API')}")
+                            st.markdown(f"**Version:** {swagger_data['info'].get('version', 'N/A')}")
+                            st.markdown(f"**Description:** {swagger_data['info'].get('description', 'No description')}")
+                            
+                            # Display servers/base URLs
+                            if "servers" in swagger_data:
+                                st.markdown("### API Servers")
+                                for server in swagger_data["servers"]:
+                                    st.markdown(f"- **{server.get('description', 'Server')}**: `{server.get('url', '')}`")
+                            
+                            # Display paths/endpoints
+                            if "paths" in swagger_data:
+                                st.markdown("### API Endpoints")
+                                
+                                for path, methods in swagger_data["paths"].items():
+                                    for method, details in methods.items():
+                                        if not method.startswith("x-"):  # Skip extensions
+                                            st.markdown(f"- **{details.get('summary', path)}**: `{method.upper()} {path}`")
+                                            if "description" in details:
+                                                st.markdown(f"  *{details['description']}*")
+                    except Exception as e:
+                        st.error(f"Error parsing Swagger/OpenAPI: {str(e)}")
+                    
 def display_output_section(env):
     """Display the output section with the selected script"""
     if not st.session_state.script_generated:
