@@ -7,7 +7,7 @@ from state import initialize_session_state, update_generated_scripts
 from utils import generate_jwt_secret
 from generators import generate_all_scripts
 import ui
-
+    
 def main():
     """Main application entry point with updated tab order and export/import functionality"""
     # Initialize session state variables
@@ -40,6 +40,10 @@ def main():
     
     with tab3:
         networking = ui.create_networking_tab()
+        # Add ARM template generator in the networking tab
+        env = sidebar_values.get('env', 'dev')
+        location = sidebar_values.get('location', 'japaneast')
+        ui.create_arm_template_section(networking, env, location)
     
     with tab4:
         app_service = ui.create_app_service_tab()

@@ -694,3 +694,192 @@ security:
     b64 = base64.b64encode(yaml_content.encode()).decode()
     href = f'<a href="data:file/yaml;base64,{b64}" download="anpi_bot_api_{env}.openapi.yaml">Download OpenAPI YAML</a>'
     return href
+  
+def get_arm_template_download_link(app_gw_name, vnet_name, subnet_name, pip_name, environment, location):
+    """
+    Create a downloadable ARM template for Application Gateway
+    
+    Args:
+        app_gw_name (str): Application Gateway name
+        vnet_name (str): VNet name
+        subnet_name (str): Subnet name
+        pip_name (str): Public IP name
+        environment (str): Environment name (e.g., Dev, Test, Prod)
+        location (str): Azure region
+        
+    Returns:
+        str: HTML link for downloading the template
+    """
+    # Create the ARM template
+    template = {
+        "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+        "contentVersion": "1.0.0.0",
+        "parameters": {
+            "applicationGatewayName": {
+                "type": "string",
+                "defaultValue": app_gw_name,
+                "metadata": {
+                    "description": "Application Gateway name"
+                }
+            },
+            "vnetName": {
+                "type": "string",
+                "defaultValue": vnet_name,
+                "metadata": {
+                    "description": "Virtual Network name"
+                }
+            },
+            "subnetName": {
+                "type": "string",
+                "defaultValue": subnet_name,
+                "metadata": {
+                    "description": "Subnet name"
+                }
+            },
+            "publicIpName": {
+                "type": "string",
+                "defaultValue": pip_name,
+                "metadata": {
+                    "description": "Public IP name"
+                }
+            },
+            "environment": {
+                "type": "string",
+                "defaultValue": environment,
+                "metadata": {
+                    "description": "Environment name"
+                }
+            },
+            "location": {
+                "type": "string",
+                "defaultValue": "[resourceGroup().location]",
+                "metadata": {
+                    "description": "Location for all resources"
+                }
+            }
+        },
+        "variables": {
+            "appGwPublicIPRef": "[resourceId('Microsoft.Network/publicIPAddresses', parameters('publicIpName'))]",
+            "appGwId": "[resourceId('Microsoft.Network/applicationGateways', parameters('applicationGatewayName'))]",
+            "subnetRef": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('subnetName'))]"
+        },
+        "resources": [
+            {
+                "apiVersion": "2021-05-01",
+                "type": "Microsoft.Network/applicationGateways",
+                "name": "[parameters('applicationGatewayName')]",
+                "location": "[parameters('location')]",
+                "tags": {
+                    "Project": "AnpiBot",
+                    "Environment": "[parameters('environment')]"
+                },
+                "properties": {
+                    "sku": {
+                        "name": "Standard_v2",
+                        "tier": "Standard_v2"
+                    },
+                    "autoscaleConfiguration": {
+                        "minCapacity": 0,
+                        "maxCapacity": 10
+                    },
+                    "gatewayIPConfigurations": [
+                        {
+                            "name": "appGatewayIpConfig",
+                            "properties": {
+                                "subnet": {
+                                    "id": "[variables('subnetRef')]"
+                                }
+                            }
+                        }
+                    ],
+                    "frontendIPConfigurations": [
+                        {
+                            "name": "appGatewayFrontendIP",
+                            "properties": {
+                                "publicIPAddress": {
+                                    "id": "[variables('appGwPublicIPRef')]"
+                                }
+                            }
+                        }
+                    ],
+                    "frontendPorts": [
+                        {
+                            "name": "appGatewayFrontendPort",
+                            "properties": {
+                                "port": 80
+                            }
+                        }
+                    ],
+                    "backendAddressPools": [
+                        {
+                            "name": "appGatewayBackendPool",
+                            "properties": {
+                                "backendAddresses": []
+                            }
+                        }
+                    ],
+                    "backendHttpSettingsCollection": [
+                        {
+                            "name": "appGatewayBackendHttpSettings",
+                            "properties": {
+                                "port": 80,
+                                "protocol": "Http",
+                                "cookieBasedAffinity": "Disabled",
+                                "pickHostNameFromBackendAddress": False,
+                                "requestTimeout": 30
+                            }
+                        }
+                    ],
+                    "httpListeners": [
+                        {
+                            "name": "appGatewayHttpListener",
+                            "properties": {
+                                "frontendIPConfiguration": {
+                                    "id": "[concat(variables('appGwId'), '/frontendIPConfigurations/appGatewayFrontendIP')]"
+                                },
+                                "frontendPort": {
+                                    "id": "[concat(variables('appGwId'), '/frontendPorts/appGatewayFrontendPort')]"
+                                },
+                                "protocol": "Http",
+                                "requireServerNameIndication": False
+                            }
+                        }
+                    ],
+                    "requestRoutingRules": [
+                        {
+                            "name": "rule1",
+                            "properties": {
+                                "ruleType": "Basic",
+                                "httpListener": {
+                                    "id": "[concat(variables('appGwId'), '/httpListeners/appGatewayHttpListener')]"
+                                },
+                                "backendAddressPool": {
+                                    "id": "[concat(variables('appGwId'), '/backendAddressPools/appGatewayBackendPool')]"
+                                },
+                                "backendHttpSettings": {
+                                    "id": "[concat(variables('appGwId'), '/backendHttpSettingsCollection/appGatewayBackendHttpSettings')]"
+                                },
+                                "priority": 100
+                            }
+                        }
+                    ],
+                    "enableHttp2": False
+                }
+            }
+        ]
+    }
+    
+    # Convert template to JSON string with proper indentation
+    template_json = json.dumps(template, indent=2)
+    
+    # Convert to base64 for download link
+    template_b64 = base64.b64encode(template_json.encode('utf-8')).decode('utf-8')
+    
+    # Generate filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"appgateway_{environment.lower()}_{timestamp}.json"
+    
+    # Create HTML download link
+    href = f'<a href="data:application/json;base64,{template_b64}" download="{filename}" class="download-button">📥 Download ARM Template</a>'
+    
+    return href

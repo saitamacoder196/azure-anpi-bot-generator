@@ -314,18 +314,18 @@ def create_networking_tab():
     default_agw_name = saved_settings.get('agw_name', f"agw-itz-{env}-jpe-001")
     default_waf_name = saved_settings.get('waf_name', f"waf-itz-{env}-jpe-001")
     
-    # Create input fields with default values
-    vnet_name = st.text_input("Virtual Network Name", value=default_vnet_name)
-    vnet_address_prefix = st.text_input("VNet Address Prefix", value=default_vnet_address_prefix)
+    # Create input fields with default values and unique keys
+    vnet_name = st.text_input("Virtual Network Name", value=default_vnet_name, key="net_vnet_name")
+    vnet_address_prefix = st.text_input("VNet Address Prefix", value=default_vnet_address_prefix, key="net_vnet_prefix")
     
     st.subheader("Subnets")
-    subnet_name = st.text_input("Subnet Name", value=default_subnet_name)
-    subnet_prefix = st.text_input("Subnet Address Prefix", value=default_subnet_prefix)
+    subnet_name = st.text_input("Subnet Name", value=default_subnet_name, key="net_subnet_name")
+    subnet_prefix = st.text_input("Subnet Address Prefix", value=default_subnet_prefix, key="net_subnet_prefix")
     
     st.subheader("Application Gateway")
-    pip_name = st.text_input("Public IP Name", value=default_pip_name)
-    agw_name = st.text_input("Application Gateway Name", value=default_agw_name)
-    waf_name = st.text_input("WAF Policy Name", value=default_waf_name)
+    pip_name = st.text_input("Public IP Name", value=default_pip_name, key="net_pip_name")
+    agw_name = st.text_input("Application Gateway Name", value=default_agw_name, key="net_agw_name")
+    waf_name = st.text_input("WAF Policy Name", value=default_waf_name, key="net_waf_name")
     
     # Create a dictionary with the current settings
     current_settings = {
@@ -581,7 +581,7 @@ def create_api_management_tab():
     saved_settings = load_tab_settings('api_management')
     
     # Set default values, using saved settings if available
-    default_apim_name = saved_settings.get('apim_name', "apim-itz")
+    default_apim_name = saved_settings.get('apim_name', "apim-itz-fjp")
     default_apim_sku = saved_settings.get('apim_sku', "Consumption")
     default_apim_publisher_email = saved_settings.get('apim_publisher_email', "tuyendhq@fpt.com")
     default_apim_publisher_name = saved_settings.get('apim_publisher_name', "FJP Japan Holding")
@@ -906,3 +906,117 @@ def create_footer():
 
     Follow the deployment checklist tab to ensure you complete all steps in the correct order.
     """)
+
+def create_arm_template_section(networking_settings, env, location):
+    """Create a section for generating ARM template for Application Gateway
+    
+    Args:
+        networking_settings (dict): Settings from the networking tab
+        env (str): Environment (dev, test, etc.)
+        location (str): Azure region
+    """
+    st.markdown("---")
+    st.subheader("Application Gateway ARM Template")
+    st.info("Generate an ARM template for the Application Gateway with proper configuration.")
+    
+    # Get values from the networking settings
+    agw_name = networking_settings.get('agw_name', f"agw-itz-{env}-jpe-001")
+    vnet_name = networking_settings.get('vnet_name', f"vnet-itz-{env}-jpe-001")
+    subnet_name = networking_settings.get('subnet_name', f"snet-itz-{env}-jpe-001")
+    pip_name = networking_settings.get('pip_name', f"pip-itz-anpi-{env}-jpe-001")
+    waf_name = networking_settings.get('waf_name', f"waf-itz-{env}-jpe-001")
+    
+    # Allow customization of key values with unique keys
+    st.subheader("ARM Template Options")
+    custom_agw_name = st.text_input("Application Gateway Name", value=agw_name, key="arm_agw_name")
+    custom_vnet_name = st.text_input("Virtual Network Name", value=vnet_name, key="arm_vnet_name")
+    custom_subnet_name = st.text_input("Subnet Name", value=subnet_name, key="arm_subnet_name")
+    custom_pip_name = st.text_input("Public IP Name", value=pip_name, key="arm_pip_name")
+    custom_waf_name = st.text_input("WAF Policy Name", value=waf_name, key="arm_waf_name")
+    
+    # Add button to generate ARM template
+    if st.button("Generate ARM Template", key="generate_arm_template"):
+        # Import function for generating download link
+        from utils import get_arm_template_download_link
+        
+        # Generate the download link
+        download_link = get_arm_template_download_link(
+            custom_agw_name,
+            custom_vnet_name,
+            custom_subnet_name,
+            custom_pip_name,
+            env.capitalize(),
+            location
+        )
+        
+        # Display the download link
+        st.markdown(download_link, unsafe_allow_html=True)
+        st.success("ARM template generated successfully. Click the download button above to save it.")
+        
+        # Display deployment instructions directly (not in an expander)
+        st.subheader("Deployment Instructions")
+        st.markdown(f"""
+        ### How to Deploy the ARM Template
+        
+        1. **Save the template**: Click the download button above to save the ARM template.
+        
+        2. **Deploy with Azure CLI**:
+        ```bash
+        az deployment group create \\
+          --resource-group $RG_NAME \\
+          --template-file appgateway.json
+        ```
+        
+        3. **After deployment, configure WAF policy**:
+        ```bash
+        # Create WAF policy
+        az network application-gateway waf-policy create \\
+          --name {custom_waf_name} \\
+          --resource-group $RG_NAME \\
+          --location {location} \\
+          --tags "Environment={env.capitalize()} Project=ITZ-Chatbot" \\
+          --policy-settings state=Enabled mode=Prevention requestBodyCheck=false maxRequestBodySizeInKb=128 fileUploadLimitInMb=100
+        
+        # Update App Gateway to WAF_v2 SKU
+        az network application-gateway update \\
+          --name {custom_agw_name} \\
+          --resource-group $RG_NAME \\
+          --sku WAF_v2 \\
+          --enable-http2
+        
+        # Link WAF policy
+        WAF_POLICY_ID=$(az network application-gateway waf-policy show --name {custom_waf_name} --resource-group $RG_NAME --query id -o tsv)
+        
+        az network application-gateway waf-policy-link update \\
+          --resource-group $RG_NAME \\
+          --gateway-name {custom_agw_name} \\
+          --policy $WAF_POLICY_ID
+        ```
+        
+        4. **Configure backend pool with APIM host**:
+        ```bash
+        # Get the API endpoint from APIM
+        APIM_NAME="apim-itz-fjp"
+        
+        # Get the host using bash parameter expansion (avoids sed issues)
+        APIM_GATEWAY_URL=$(az apim show --name $APIM_NAME --resource-group $RG_NAME --query properties.gatewayUrl -o tsv)
+        APIM_HOST=${{APIM_GATEWAY_URL#https://}}
+        APIM_HOST=${{APIM_HOST%%/*}}
+        
+        # Add APIM to backend pool
+        az network application-gateway address-pool create \\
+          --name apim-backend-pool \\
+          --gateway-name {custom_agw_name} \\
+          --resource-group $RG_NAME \\
+          --servers "$APIM_HOST"
+        ```
+        """)
+    
+    # Return the customized values for potential use elsewhere
+    return {
+        'agw_name': custom_agw_name,
+        'vnet_name': custom_vnet_name,
+        'subnet_name': custom_subnet_name,
+        'pip_name': custom_pip_name,
+        'waf_name': custom_waf_name
+    }
